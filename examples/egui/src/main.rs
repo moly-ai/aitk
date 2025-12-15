@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use ai_kit::prelude::*;
+use aitk::prelude::*;
 
 fn main() -> eframe::Result {
     env_logger::init();

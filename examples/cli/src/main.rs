@@ -1,4 +1,4 @@
-use ai_kit::prelude::*;
+use aitk::prelude::*;
 use crossterm::{QueueableCommand, cursor, terminal};
 use std::io::{Write, stdin, stdout};
 use std::sync::mpsc::{Sender, channel};
