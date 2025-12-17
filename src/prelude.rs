@@ -4,13 +4,14 @@
 pub use crate::protocol::*;
 
 // These are the clients that are most commonly used.
+pub use crate::clients::multi::MultiClient;
+#[cfg(all(feature = "json", feature = "http"))]
 pub use crate::clients::{multi::MultiClient, openai::OpenAiClient};
 
 // These other clients are less commonly used.
-pub use crate::clients::{
-    map::MapClient, openai_image::OpenAiImageClient, openai_realtime::OpenAiRealtimeClient,
-    tester::TesterClient,
-};
+pub use crate::clients::{map::MapClient, tester::TesterClient};
+#[cfg(all(feature = "json", feature = "http"))]
+pub use crate::clients::{openai_image::OpenAiImageClient, openai_realtime::OpenAiRealtimeClient};
 
 // If we re-export clients, then we may also re-export tools.
 pub use crate::mcp::mcp_manager::{McpManagerClient, McpTransport};

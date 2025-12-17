@@ -1,9 +1,7 @@
 use crate::protocol::*;
-use crate::utils::asynchronous::{BoxPlatformSendFuture, BoxPlatformSendStream, sleep};
+use crate::utils::asynchronous::{BoxPlatformSendFuture, BoxPlatformSendStream};
 use async_stream::stream;
 use std::collections::VecDeque;
-use std::fmt::Write;
-use std::time::Duration;
 
 const HELP: &str = r#"Available commands:
 - say <text>: The bot will respond with <text>.
@@ -99,11 +97,20 @@ impl BotClient for TesterClient {
                     unreachable!();
                 }
                 Some("wait") => {
-                    sleep(Duration::from_secs(2)).await;
+                    #[cfg(not(feature = "async-rt"))]
                     yield ClientResult::new_ok(MessageContent {
-                        text: "done waiting".into(),
+                        text: "async-rt feature is disabled, cannot wait".into(),
                         ..Default::default()
                     });
+
+                    #[cfg(feature = "async-rt")]
+                    {
+                        crate::utils::asynchronous::sleep(std::time::Duration::from_secs(2)).await;
+                        yield ClientResult::new_ok(MessageContent {
+                            text: "done waiting".into(),
+                            ..Default::default()
+                        });
+                    }
                 }
                 Some("help") => {
                     yield ClientResult::new_ok(MessageContent {
@@ -131,11 +138,20 @@ impl BotClient for TesterClient {
                     },
                 },
                 Some("stream_lines") => {
+                    #[cfg(not(feature = "async-rt"))]
+                    yield ClientResult::new_ok(MessageContent {
+                        text: "async-rt feature is disabled, cannot stream lines".into(),
+                        ..Default::default()
+                    });
+
+
+                    #[cfg(feature = "async-rt")]
                     match input.pop_front().and_then(|s| s.parse::<usize>().ok()) {
                         Some(n) => {
                             let mut content = MessageContent::default();
                             for i in 1..=n {
-                                sleep(Duration::from_millis(500)).await;
+                                use std::fmt::Write;
+                                crate::utils::asynchronous::sleep(std::time::Duration::from_millis(500)).await;
                                 write!(content.text, "This is line {i}\n\n").unwrap();
                                 yield ClientResult::new_ok(content.clone());
                             }

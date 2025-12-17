@@ -58,6 +58,7 @@ pub type BoxPlatformSendStream<'a, T> = Pin<Box<dyn PlatformSendStream<Item = T>
 /// **Note:** This function may spawn it's own runtime if it can't find an existing one.
 /// Currently, Makepad doesn't expose the entry point in certain platforms (like Android),
 /// making harder to configure a runtime manually.
+#[cfg(feature = "async-rt")]
 pub fn spawn(fut: impl PlatformSendFuture<Output = ()> + 'static) {
     spawn_impl(fut);
 }
@@ -92,13 +93,14 @@ fn spawn_impl(fut: impl Future<Output = ()> + 'static) {
 }
 
 /// Cross-platform async sleep function.
+#[cfg(feature = "async-rt")]
 pub async fn sleep(duration: std::time::Duration) {
-    #[cfg(all(feature = "async-rt", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     {
         tokio::time::sleep(duration).await;
     }
 
-    #[cfg(all(feature = "async-rt", target_arch = "wasm32"))]
+    #[cfg(target_arch = "wasm32")]
     {
         wasm_bindgen_futures::JsFuture::from(js_sys::Promise::new(&mut |resolve, _| {
             web_sys::window()
@@ -178,6 +180,7 @@ mod abort_on_drop {
     /// Note: If you need to distinguish if the future was aborted or completed,
     /// you should use [`abort_on_drop`] and spawn the future manually instead.
     #[must_use]
+    #[cfg(feature = "async-rt")]
     pub fn spawn_abort_on_drop(
         fut: impl PlatformSendFuture<Output = ()> + 'static,
     ) -> AbortOnDropHandle {
