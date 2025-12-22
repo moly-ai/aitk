@@ -6,7 +6,7 @@ pub use crate::protocol::*;
 // These are the clients that are most commonly used.
 pub use crate::clients::multi::MultiClient;
 #[cfg(all(feature = "json", feature = "http"))]
-pub use crate::clients::{multi::MultiClient, openai::OpenAiClient};
+pub use crate::clients::openai::OpenAiClient;
 
 // These other clients are less commonly used.
 pub use crate::clients::{map::MapClient, tester::TesterClient};
