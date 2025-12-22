@@ -4,7 +4,7 @@ use crate::{
     mcp::mcp_manager::{McpManagerClient, display_name_from_namespaced},
     protocol::*,
     utils::{
-        asynchronous::{AbortOnDropHandle, spawn_abort_on_drop},
+        asynchronous::{AbortOnDropHandle, ErasedSpawner, Spawner},
         vec::VecMutation,
     },
 };
@@ -76,6 +76,7 @@ pub struct ChatController {
     execute_tools_abort_on_drop: Option<AbortOnDropHandle>,
     client: Option<Box<dyn BotClient>>,
     tool_manager: Option<McpManagerClient>,
+    spawner: Option<Box<dyn ErasedSpawner>>,
 }
 
 impl ChatController {
@@ -96,12 +97,24 @@ impl ChatController {
                 execute_tools_abort_on_drop: None,
                 client: None,
                 tool_manager: None,
+                spawner: None,
             })
         })
     }
 
     pub fn builder() -> ChatControllerBuilder {
         ChatControllerBuilder::new()
+    }
+
+    pub fn set_spawner<S>(&mut self, spawner: Option<S>)
+    where
+        S: ErasedSpawner + 'static,
+    {
+        self.spawner = spawner.map(|s| Box::new(s) as Box<dyn ErasedSpawner>);
+    }
+
+    pub fn set_basic_spawner(&mut self) {
+        self.set_spawner(Some(crate::utils::asynchronous::BasicSpawner));
     }
 
     /// Registers a plugin to extend the controller behavior. Runs after all other plugins.
@@ -286,6 +299,14 @@ impl ChatController {
         // Clean previous streaming artifacts if any.
         self.clear_streaming_artifacts();
 
+        let Some(mut spawner) = self.spawner.clone() else {
+            self.dispatch_mutation(VecMutation::Push(Message::app_error(
+                "No async spawner configured",
+            )));
+
+            return;
+        };
+
         let Some(mut client) = self.client.clone() else {
             self.dispatch_mutation(VecMutation::Push(Message::app_error(
                 "No bot client configured",
@@ -315,7 +336,7 @@ impl ChatController {
             .collect::<Vec<_>>();
 
         let controller = self.accessor.clone();
-        self.send_abort_on_drop = Some(spawn_abort_on_drop(async move {
+        self.send_abort_on_drop = Some(spawner.spawn_abort_on_drop(async move {
             let Some(tools) = controller.lock_with(|c| {
                 c.tool_manager
                     .as_ref()
@@ -386,6 +407,14 @@ impl ChatController {
     fn handle_load(&mut self) {
         self.dispatch_mutation(ChatStateMutation::SetLoadStatus(Status::Working));
 
+        let Some(mut spawner) = self.spawner.clone() else {
+            self.dispatch_mutation(ChatStateMutation::SetLoadStatus(Status::Error));
+            self.dispatch_mutation(VecMutation::Push(Message::app_error(
+                "No async spawner configured",
+            )));
+            return;
+        };
+
         let client = match self.client.clone() {
             Some(c) => c,
             None => {
@@ -398,7 +427,7 @@ impl ChatController {
         };
 
         let controller = self.accessor.clone();
-        self.load_bots_abort_on_drop = Some(spawn_abort_on_drop(async move {
+        self.load_bots_abort_on_drop = Some(spawner.spawn_abort_on_drop(async move {
             let (bots, errors) = client.bots().await.into_value_and_errors();
             controller.lock_with(move |c| {
                 if errors.is_empty() {
@@ -480,6 +509,12 @@ impl ChatController {
     }
 
     fn handle_execute(&mut self, tool_calls: Vec<ToolCall>, bot_id: Option<BotId>) {
+        let Some(mut spawner) = self.spawner.clone() else {
+            self.dispatch_mutation(VecMutation::Push(Message::app_error(
+                "Tool execution failed: No async spawner configured",
+            )));
+            return;
+        };
         let Some(tool_manager) = self.tool_manager.clone() else {
             self.dispatch_mutation(VecMutation::Push(Message::app_error(
                 "Tool execution failed: Tool manager not available",
@@ -514,7 +549,7 @@ impl ChatController {
         self.dispatch_mutation(VecMutation::Push(loading_message));
         self.dispatch_mutation(ChatStateMutation::SetIsStreaming(true));
 
-        self.execute_tools_abort_on_drop = Some(spawn_abort_on_drop(async move {
+        self.execute_tools_abort_on_drop = Some(spawner.spawn_abort_on_drop(async move {
             // Execute tool calls using MCP manager
             let tool_results = tool_manager.execute_tool_calls(tool_calls.clone()).await;
 
@@ -592,6 +627,19 @@ pub struct ChatControllerBuilder(Arc<Mutex<ChatController>>);
 impl ChatControllerBuilder {
     pub fn new() -> Self {
         Self(ChatController::new_arc())
+    }
+
+    pub fn with_spawner<S>(self, spawner: S) -> Self
+    where
+        S: ErasedSpawner + 'static,
+    {
+        self.0.lock().unwrap().set_spawner(Some(spawner));
+        self
+    }
+
+    pub fn with_basic_spawner(self) -> Self {
+        self.0.lock().unwrap().set_basic_spawner();
+        self
     }
 
     pub fn with_client<C>(self, client: C) -> Self

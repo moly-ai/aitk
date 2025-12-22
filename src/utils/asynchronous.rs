@@ -92,6 +92,74 @@ fn spawn_impl(fut: impl Future<Output = ()> + 'static) {
     wasm_bindgen_futures::spawn_local(fut);
 }
 
+pub trait Spawner: Send {
+    fn spawn(&mut self, fut: impl PlatformSendFuture<Output = ()> + 'static);
+    fn spawn_abort_on_drop(
+        &mut self,
+        fut: impl PlatformSendFuture<Output = ()> + 'static,
+    ) -> AbortOnDropHandle {
+        let (abortable_fut, handle) = abort_on_drop(fut);
+        self.spawn(async move {
+            let _ = abortable_fut.await;
+        });
+        handle
+    }
+}
+
+pub trait ErasedSpawner: Send {
+    fn spawn_boxed(&mut self, fut: BoxPlatformSendFuture<'static, ()>);
+    fn spawn_abort_on_drop_boxed(
+        &mut self,
+        fut: BoxPlatformSendFuture<'static, ()>,
+    ) -> AbortOnDropHandle;
+    fn clone_box(&self) -> Box<dyn ErasedSpawner>;
+}
+
+#[cfg(feature = "async-rt")]
+#[derive(Clone, Debug)]
+pub struct BasicSpawner;
+
+#[cfg(feature = "async-rt")]
+impl Spawner for BasicSpawner {
+    fn spawn(&mut self, fut: impl PlatformSendFuture<Output = ()> + 'static) {
+        spawn(fut);
+    }
+}
+
+impl Spawner for () {
+    fn spawn(&mut self, _fut: impl PlatformSendFuture<Output = ()> + 'static) {}
+}
+
+impl<T> ErasedSpawner for T
+where
+    T: Spawner + Clone + 'static,
+{
+    fn spawn_boxed(&mut self, fut: BoxPlatformSendFuture<'static, ()>) {
+        self.spawn(fut);
+    }
+    fn spawn_abort_on_drop_boxed(
+        &mut self,
+        fut: BoxPlatformSendFuture<'static, ()>,
+    ) -> AbortOnDropHandle {
+        self.spawn_abort_on_drop(fut)
+    }
+    fn clone_box(&self) -> Box<dyn ErasedSpawner> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn ErasedSpawner> {
+    fn clone(&self) -> Self {
+        self.as_ref().clone_box()
+    }
+}
+
+impl Spawner for Box<dyn ErasedSpawner> {
+    fn spawn(&mut self, fut: impl PlatformSendFuture<Output = ()> + 'static) {
+        self.as_mut().spawn_boxed(Box::pin(fut));
+    }
+}
+
 /// Cross-platform async sleep function.
 #[cfg(feature = "async-rt")]
 pub async fn sleep(duration: std::time::Duration) {
