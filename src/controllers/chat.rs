@@ -113,6 +113,7 @@ impl ChatController {
         self.spawner = spawner.map(|s| Box::new(s) as Box<dyn ErasedSpawner>);
     }
 
+    #[cfg(feature = "async-rt")]
     pub fn set_basic_spawner(&mut self) {
         self.set_spawner(Some(crate::utils::asynchronous::BasicSpawner));
     }
@@ -637,6 +638,7 @@ impl ChatControllerBuilder {
         self
     }
 
+    #[cfg(feature = "async-rt")]
     pub fn with_basic_spawner(self) -> Self {
         self.0.lock().unwrap().set_basic_spawner();
         self
