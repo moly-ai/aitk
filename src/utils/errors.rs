@@ -1,5 +1,7 @@
+#[cfg(feature = "http")]
 use reqwest::StatusCode;
 
+#[cfg(feature = "http")]
 pub fn enrich_http_error(status: StatusCode, original: &str, body: Option<&str>) -> String {
     let clarification = match status {
         StatusCode::TOO_MANY_REQUESTS => {
