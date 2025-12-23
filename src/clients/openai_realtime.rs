@@ -558,7 +558,8 @@ impl OpenAiRealtimeClient {
                                 // Convert MCP tools to OpenAI realtime format
                                 let realtime_tools: Vec<serde_json::Value> = tools.iter().map(|tool| {
                                     // Use the same conversion logic as the regular OpenAI client
-                                    let mut parameters_map = (*tool.input_schema).clone();
+                                    let mut parameters_map: serde_json::Map<String, serde_json::Value> =
+                                        serde_json::from_str(&tool.input_schema).unwrap_or_default();
 
                                     // Ensure additionalProperties is set to false as required by OpenAI
                                     parameters_map.insert(

@@ -407,9 +407,20 @@ impl McpManagerClient {
         &self,
         tool_name: &str,
         tool_call_id: &str,
-        arguments: Map<String, Value>,
+        arguments: String,
     ) -> ToolResult {
-        match self.call_tool(tool_name, arguments).await {
+        let arguments_map = match parse_tool_arguments(&arguments) {
+            Ok(map) => map,
+            Err(e) => {
+                return ToolResult {
+                    tool_call_id: tool_call_id.to_string(),
+                    content: format!("Failed to parse arguments: {}", e),
+                    is_error: true,
+                };
+            }
+        };
+
+        match self.call_tool(tool_name, arguments_map).await {
             Ok(result) => {
                 // Convert result to content string
                 let content = result
@@ -445,7 +456,7 @@ impl McpManagerClient {
         &self,
         tool_name: &str,
         tool_call_id: &str,
-        _arguments: Map<String, Value>,
+        _arguments: String,
     ) -> ToolResult {
         ToolResult {
             tool_call_id: tool_call_id.to_string(),

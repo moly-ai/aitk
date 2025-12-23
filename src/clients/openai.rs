@@ -100,7 +100,8 @@ struct FunctionTool {
 impl From<&Tool> for FunctionTool {
     fn from(tool: &Tool) -> Self {
         // Use the input_schema from the MCP tool, but ensure OpenAI compatibility
-        let mut parameters_map = (*tool.input_schema).clone();
+        let mut parameters_map: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&tool.input_schema).unwrap_or_default();
 
         // Ensure additionalProperties is set to false as required by OpenAI
         parameters_map.insert(
@@ -267,21 +268,27 @@ async fn to_outgoing_message(message: Message) -> Result<OutgoingMessage, String
     };
 
     // Convert tool calls to OpenAI format
-    let tool_calls =
-        if !message.content.tool_calls.is_empty() {
-            Some(message.content.tool_calls.iter().map(|tc| {
-            serde_json::json!({
-                "id": tc.id,
-                "type": "function",
-                "function": {
-                    "name": tc.name,
-                    "arguments": serde_json::to_string(&tc.arguments).unwrap_or_default()
-                }
-            })
-        }).collect())
-        } else {
-            None
-        };
+    let tool_calls = if !message.content.tool_calls.is_empty() {
+        Some(
+            message
+                .content
+                .tool_calls
+                .iter()
+                .map(|tc| {
+                    serde_json::json!({
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": tc.arguments
+                        }
+                    })
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
 
     Ok(OutgoingMessage {
         content,
@@ -358,13 +365,11 @@ fn finalize_remaining_tool_calls(
     // Process any remaining buffered tool calls
     for (tool_call_id, buffered_args) in tool_argument_buffers.drain() {
         let arguments = if buffered_args.is_empty() || buffered_args == "{}" {
-            serde_json::Map::new()
+            "{}".to_string()
         } else {
             match serde_json::from_str::<serde_json::Value>(&buffered_args) {
-                Ok(serde_json::Value::Object(args)) => args,
-                Ok(serde_json::Value::Null) => serde_json::Map::new(),
-                Ok(_) => serde_json::Map::new(),
-                Err(_) => serde_json::Map::new(),
+                Ok(_) => buffered_args,
+                Err(_) => "{}".to_string(),
             }
         };
 
@@ -770,19 +775,19 @@ impl BotClient for OpenAiClient {
                             let arguments = if buffer_entry == "{}" {
                                 // Special case: Empty JSON object indicates a tool call with no arguments
                                 // Example: A tool like "get_weather" that takes no parameters
-                                Some(serde_json::Map::new())
+                                Some("{}".to_string())
                             } else {
                                 match serde_json::from_str::<serde_json::Value>(buffer_entry) {
                                     // Successfully parsed as a JSON object with key-value pairs
                                     // This is the normal case for tool calls with parameters
                                     // Example: {"query": "What's the weather?", "location": "NYC"}
-                                    Ok(serde_json::Value::Object(args)) => Some(args),
+                                    Ok(serde_json::Value::Object(_)) => Some(buffer_entry.clone()),
                                     // Successfully parsed as JSON null value
                                     // Treat this the same as empty object - tool call with no arguments
-                                    Ok(serde_json::Value::Null) => Some(serde_json::Map::new()),
+                                    Ok(serde_json::Value::Null) => Some("{}".to_string()),
                                     // Successfully parsed as some other JSON type (array, string, number, bool)
                                     // This is unexpected for tool arguments, so we default to empty arguments for now
-                                    Ok(_) => Some(serde_json::Map::new()),
+                                    Ok(_) => Some("{}".to_string()),
                                     // Failed to parse as valid JSON - arguments are still incomplete
                                     // This happens when we're in the middle of streaming and haven't
                                     // received the complete JSON yet. Keep buffering until we can parse.

@@ -6,43 +6,53 @@ use serde::{Deserialize, Serialize};
 pub struct Tool {
     pub name: String,
     pub description: Option<String>,
-    /// JSON Schema object defining the expected parameters for the tool
-    #[cfg_attr(feature = "json", serde(default))]
-    pub input_schema: std::sync::Arc<serde_json::Map<String, serde_json::Value>>,
+    /// JSON Schema object defining the expected parameters for the tool.
+    /// Stored as a raw JSON string to be agnostic of the serialization library.
+    pub input_schema: String,
 }
 
 impl Tool {
-    pub fn new(name: String, description: Option<String>) -> Self {
-        use serde_json::Map;
-        use std::sync::Arc;
-
+    pub fn new(name: String, description: Option<String>, input_schema: String) -> Self {
         Tool {
             name,
             description,
-            input_schema: Arc::new(Map::new()),
+            input_schema,
         }
+    }
+
+    #[cfg(feature = "json")]
+    pub fn input_schema_value(&self) -> serde_json::Result<serde_json::Value> {
+        serde_json::from_str(&self.input_schema)
     }
 }
 
 // Conversion traits for rmcp interop on native platforms
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "json"))]
 impl From<rmcp::model::Tool> for Tool {
     fn from(rmcp_tool: rmcp::model::Tool) -> Self {
+        let input_schema =
+            serde_json::to_string(&rmcp_tool.input_schema).unwrap_or_else(|_| "{}".to_string());
         Tool {
             name: rmcp_tool.name.into_owned(),
             description: rmcp_tool.description.map(|d| d.into_owned()),
-            input_schema: rmcp_tool.input_schema,
+            input_schema,
         }
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "json"))]
 impl From<Tool> for rmcp::model::Tool {
     fn from(tool: Tool) -> Self {
+        use serde_json::Map;
+        use std::sync::Arc;
+
+        let input_schema =
+            serde_json::from_str(&tool.input_schema).unwrap_or_else(|_| Arc::new(Map::new()));
+
         rmcp::model::Tool {
             name: tool.name.into(),
             description: tool.description.map(|d| d.into()),
-            input_schema: tool.input_schema,
+            input_schema,
             output_schema: None,
             annotations: None,
         }
@@ -70,11 +80,21 @@ pub struct ToolCall {
     pub id: String,
     /// Name of the tool/function to call
     pub name: String,
-    /// Arguments passed to the tool (JSON)
-    pub arguments: serde_json::Map<String, serde_json::Value>,
+    /// Arguments passed to the tool (JSON string)
+    pub arguments: String,
     /// Permission status for this tool call
     #[cfg_attr(feature = "json", serde(default))]
     pub permission_status: ToolCallPermissionStatus,
+}
+
+impl ToolCall {
+    #[cfg(feature = "json")]
+    pub fn arguments_json(&self) -> serde_json::Result<serde_json::Map<String, serde_json::Value>> {
+        match serde_json::from_str(&self.arguments)? {
+            serde_json::Value::Object(map) => Ok(map),
+            _ => Err(serde::de::Error::custom("Arguments must be a JSON object")),
+        }
+    }
 }
 
 /// Represents the result of a tool call execution
