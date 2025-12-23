@@ -7,5 +7,5 @@ pub(crate) mod platform;
 pub(crate) mod serde;
 pub mod sse;
 pub(crate) mod string;
-pub(crate) mod tool_execution;
+pub(crate) mod tool;
 pub mod vec;
