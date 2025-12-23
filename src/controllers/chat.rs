@@ -1,7 +1,8 @@
 //! Framework-agnostic state management to implement a `Chat` component/widget/element.
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "mcp"))]
+use crate::mcp::mcp_manager::{McpManagerClient, display_name_from_namespaced};
 use crate::{
-    mcp::mcp_manager::{McpManagerClient, display_name_from_namespaced},
     protocol::*,
     utils::{
         asynchronous::{AbortOnDropHandle, ErasedSpawner, Spawner},
@@ -75,6 +76,7 @@ pub struct ChatController {
     load_bots_abort_on_drop: Option<AbortOnDropHandle>,
     execute_tools_abort_on_drop: Option<AbortOnDropHandle>,
     client: Option<Box<dyn BotClient>>,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "mcp"))]
     tool_manager: Option<McpManagerClient>,
     spawner: Option<Box<dyn ErasedSpawner>>,
 }
@@ -497,14 +499,17 @@ impl ChatController {
         self.client.as_deref_mut()
     }
 
+    #[cfg(all(not(target_arch = "wasm32"), feature = "mcp"))]
     pub fn tool_manager(&self) -> Option<&McpManagerClient> {
         self.tool_manager.as_ref()
     }
 
+    #[cfg(all(not(target_arch = "wasm32"), feature = "mcp"))]
     pub fn tool_manager_mut(&mut self) -> Option<&mut McpManagerClient> {
         self.tool_manager.as_mut()
     }
 
+    #[cfg(all(not(target_arch = "wasm32"), feature = "mcp"))]
     pub fn set_tool_manager(&mut self, tool_manager: Option<McpManagerClient>) {
         self.tool_manager = tool_manager;
     }
