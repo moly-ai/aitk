@@ -1,10 +1,11 @@
 //! Framework-agnostic state management to implement a `Chat` component/widget/element.
 
 use crate::{
-    mcp::mcp_manager::{McpManagerClient, display_name_from_namespaced},
+    mcp::mcp_manager::McpManagerClient,
     protocol::*,
     utils::{
         asynchronous::{AbortOnDropHandle, ErasedSpawner, Spawner},
+        tool::display_name_from_namespaced,
         vec::VecMutation,
     },
 };
@@ -567,10 +568,8 @@ impl ChatController {
                 if result.is_error {
                     format!("🔧 Tool '{}' failed:\n{}", display_name, result.content)
                 } else {
-                    let summary = crate::utils::tool_execution::create_tool_output_summary(
-                        tool_name,
-                        &result.content,
-                    );
+                    let summary =
+                        crate::utils::tool::create_tool_output_summary(tool_name, &result.content);
                     format!(
                         "🔧 Tool '{}' executed successfully:\n`{}`",
                         display_name, summary
@@ -589,7 +588,7 @@ impl ChatController {
                     if result.is_error {
                         text.push_str(&format!("**{}** ❌: {}\n\n", display_name, result.content));
                     } else {
-                        let summary = crate::utils::tool_execution::create_tool_output_summary(
+                        let summary = crate::utils::tool::create_tool_output_summary(
                             tool_name,
                             &result.content,
                         );

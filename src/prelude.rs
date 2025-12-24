@@ -14,6 +14,7 @@ pub use crate::clients::{map::MapClient, tester::TesterClient};
 pub use crate::clients::{openai_image::OpenAiImageClient, openai_realtime::OpenAiRealtimeClient};
 
 // If we re-export clients, then we may also re-export tools.
+#[cfg(feature = "mcp")]
 pub use crate::mcp::mcp_manager::{McpManagerClient, McpTransport};
 
 // Only used by users that want the built-in chat business logic. But this is expected.

@@ -9,9 +9,6 @@ reqwest = { version = "0.12.12", features = [
   "stream",
   "rustls-tls",
 ], default-features = false, optional = true }
-serde = { version = "1.0.217", features = ["derive", "rc"], optional = true }
-serde_json = { version = "1.0.135", optional = true }
-base64 = { version = "0.22.1", optional = true }
 
 futures = "0.3.31"
 url = "2.4.10"
@@ -21,6 +18,9 @@ log = "0.4"
 chrono = "0.4.41"
 mime_guess = "2.0.5"
 unicode-segmentation = "1.12.0"
+serde = { version = "1.0.217", features = ["derive", "rc"] }
+serde_json = { version = "1.0.135" }
+base64 = { version = "0.22.1" }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux", target_arch = "wasm32"))'.dependencies]
 rfd = { version = "0.15.3", features = ["ashpd", "urlencoding", "xdg-portal"] }
@@ -31,6 +31,8 @@ tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"], 
 rmcp = { git = "https://www.github.com/modelcontextprotocol/rust-sdk", rev = "9349f5cb", features = ["transport-sse-client", "transport-sse-client-reqwest", "transport-streamable-http-client", "transport-streamable-http-client-reqwest", "transport-child-process", "client"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+# `wasm-bindgen-futures` is actually very lightweight, but keeping this optional
+# is consistent with the native behavior.
 wasm-bindgen-futures = { version = "0.4.50", optional = true }
 js-sys = "0.3.77"
 web-sys = { version = "0.3.77", features = [
@@ -45,8 +47,8 @@ web-sys = { version = "0.3.77", features = [
 [features]
 default = []
 # default = ["full"]
-json = ["dep:serde", "dep:serde_json", "dep:base64", "chrono/serde"]
 http = ["dep:reqwest"]
 async-rt = ["dep:tokio", "dep:wasm-bindgen-futures"]
 realtime = ["dep:tokio-tungstenite", "dep:tokio"]
-full = ["default", "json", "async-rt", "realtime", "http"]
+mcp = ["async-rt", "http"]
+full = ["default", "async-rt", "realtime", "http"]
