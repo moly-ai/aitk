@@ -11,7 +11,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use std::sync::Arc;
 
-#[cfg(feature = "json")]
 use serde::{Deserialize, Serialize};
 
 /// Private `rfd::FileHandle` wrapper with a runtime generated ID for partial equality.
@@ -72,7 +71,6 @@ enum AttachmentContentHandle {
     Persisted(PersistedAttachmentHandle),
 }
 
-#[cfg(feature = "json")]
 impl serde::Serialize for AttachmentContentHandle {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -88,7 +86,6 @@ impl serde::Serialize for AttachmentContentHandle {
     }
 }
 
-#[cfg(feature = "json")]
 impl<'de> serde::Deserialize<'de> for AttachmentContentHandle {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -251,8 +248,7 @@ impl AttachmentContentHandle {
 /// originally intended to give "pragmatic" access to methods like `read()` and `pick_multiple()`,
 /// but as everything mixing concerns, this now causes some issues like making the persistence
 /// feature uglier to integrate. So this abstraction is likely to change in the future.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Attachment {
     /// Normally the original filename.
     pub name: String,

@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Standard message content format.
-#[derive(Clone, Debug, PartialEq, Default)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct MessageContent {
     /// The main body/document of this message.
     ///
@@ -17,22 +16,19 @@ pub struct MessageContent {
     pub citations: Vec<String>,
 
     /// The reasoning/thinking content of this message.
-    #[cfg_attr(
-        feature = "json",
-        serde(deserialize_with = "crate::utils::serde::deserialize_default_on_error")
-    )]
+    #[serde(deserialize_with = "crate::utils::serde::deserialize_default_on_error")]
     pub reasoning: String,
 
     /// File attachments in this content.
-    #[cfg_attr(feature = "json", serde(default))]
+    #[serde(default)]
     pub attachments: Vec<Attachment>,
 
     /// Tool calls made by the AI (for assistant messages)
-    #[cfg_attr(feature = "json", serde(default))]
+    #[serde(default)]
     pub tool_calls: Vec<ToolCall>,
 
     /// Tool call results (for tool messages)
-    #[cfg_attr(feature = "json", serde(default))]
+    #[serde(default)]
     pub tool_results: Vec<ToolResult>,
 
     /// Non-standard data contained by this message.
@@ -53,7 +49,7 @@ pub struct MessageContent {
     pub data: Option<String>,
 
     /// Optional upgrade to realtime communication
-    #[cfg_attr(feature = "json", serde(skip))]
+    #[serde(skip)]
     pub upgrade: Option<Upgrade>,
 }
 
@@ -75,34 +71,33 @@ impl MessageContent {
 ///
 /// "Metadata" basically means "data about data". Like tracking timestamps for
 /// data modification.
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MessageMetadata {
     /// Runtime flag indicating that the message is still incomplete (being written).
     ///
     /// Skipped during serialization.
-    #[cfg_attr(feature = "json", serde(skip))]
+    #[serde(skip)]
     pub is_writing: bool,
 
     /// When the message got created.
     ///
     /// Default to epoch if missing during deserialization. Otherwise, if constructed
     /// by [`MessageMetadata::default`], it defaults to "now".
-    #[cfg_attr(feature = "json", serde(default))]
+    #[serde(default)]
     pub created_at: DateTime<Utc>,
 
     /// Last time the reasoning/thinking content was updated.
     ///
     /// Default to epoch if missing during deserialization. Otherwise, if constructed
     /// by [`MessageMetadata::default`], it defaults to "now".
-    #[cfg_attr(feature = "json", serde(default))]
+    #[serde(default)]
     pub reasoning_updated_at: DateTime<Utc>,
 
     /// Last time the main text was updated.
     ///
     /// Default to epoch if missing during deserialization. Otherwise, if constructed
     /// by [`MessageMetadata::default`], it defaults to "now".
-    #[cfg_attr(feature = "json", serde(default))]
+    #[serde(default)]
     pub text_updated_at: DateTime<Utc>,
 }
 
@@ -153,8 +148,7 @@ impl MessageMetadata {
 }
 
 /// A message that is part of a conversation.
-#[derive(Clone, PartialEq, Debug, Default)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize)]
 pub struct Message {
     /// The id of who sent this message.
     pub from: EntityId,
@@ -163,7 +157,7 @@ pub struct Message {
     ///
     /// If missing during deserialization, uses [`MessageMetadata::epoch`] instead
     /// of [`MessageMetadata::default`].
-    #[cfg_attr(feature = "json", serde(default = "MessageMetadata::epoch"))]
+    #[serde(default = "MessageMetadata::epoch")]
     pub metadata: MessageMetadata,
 
     /// The parsed content of this message ready to present.

@@ -15,7 +15,7 @@ url = "2.4.10"
 async-stream = "0.3.6"
 cfg-if = "1.0.0"
 log = "0.4"
-chrono = "0.4.41"
+chrono = { version = "0.4.41", features = ["serde"] }
 mime_guess = "2.0.5"
 unicode-segmentation = "1.12.0"
 serde = { version = "1.0.217", features = ["derive", "rc"] }
