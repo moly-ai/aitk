@@ -175,8 +175,25 @@ impl AttachmentContentHandle {
             AttachmentContentHandle::InMemory(content) => Ok(content.clone()),
             #[cfg(not(target_arch = "wasm32"))]
             AttachmentContentHandle::FilePick(path) => {
-                let content = tokio::fs::read(path).await?;
-                Ok(Arc::from(content))
+                let path = path.clone();
+                let (tx, rx) = futures::channel::oneshot::channel();
+
+                crate::utils::thread::queue_blocking(move || {
+                    let result = std::fs::read(path);
+                    let _ = tx.send(result);
+                });
+
+                let content = rx
+                    .await
+                    .map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "Failed to receive file read result",
+                        )
+                    })??
+                    .into();
+
+                Ok(content)
             }
             #[cfg(target_arch = "wasm32")]
             AttachmentContentHandle::FilePick(handle) => {
