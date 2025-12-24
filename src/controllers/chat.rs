@@ -1,11 +1,11 @@
 //! Framework-agnostic state management to implement a `Chat` component/widget/element.
 
+#[cfg(feature = "mcp")]
+use crate::{mcp::mcp_manager::McpManagerClient, utils::tool::display_name_from_namespaced};
 use crate::{
-    mcp::mcp_manager::McpManagerClient,
     protocol::*,
     utils::{
         asynchronous::{AbortOnDropHandle, ErasedSpawner, Spawner},
-        tool::display_name_from_namespaced,
         vec::VecMutation,
     },
 };
@@ -76,6 +76,7 @@ pub struct ChatController {
     load_bots_abort_on_drop: Option<AbortOnDropHandle>,
     execute_tools_abort_on_drop: Option<AbortOnDropHandle>,
     client: Option<Box<dyn BotClient>>,
+    #[cfg(feature = "mcp")]
     tool_manager: Option<McpManagerClient>,
     spawner: Option<Box<dyn ErasedSpawner>>,
 }
@@ -97,6 +98,7 @@ impl ChatController {
                 load_bots_abort_on_drop: None,
                 execute_tools_abort_on_drop: None,
                 client: None,
+                #[cfg(feature = "mcp")]
                 tool_manager: None,
                 spawner: None,
             })
@@ -339,12 +341,7 @@ impl ChatController {
 
         let controller = self.accessor.clone();
         self.send_abort_on_drop = Some(spawner.spawn_abort_on_drop(async move {
-            let Some(tools) = controller.lock_with(|c| {
-                c.tool_manager
-                    .as_ref()
-                    .map(|tm| tm.get_all_namespaced_tools())
-                    .unwrap_or_default()
-            }) else {
+            let Some(tools) = controller.lock_with(|c| c.get_all_namespaced_tools()) else {
                 return;
             };
 
@@ -446,6 +443,19 @@ impl ChatController {
         }));
     }
 
+    #[cfg(feature = "mcp")]
+    fn get_all_namespaced_tools(&self) -> Vec<Tool> {
+        self.tool_manager
+            .as_ref()
+            .map(|tm| tm.get_all_namespaced_tools())
+            .unwrap_or_default()
+    }
+
+    #[cfg(not(feature = "mcp"))]
+    fn get_all_namespaced_tools(&self) -> Vec<Tool> {
+        Vec::new()
+    }
+
     fn handle_message_content(
         &mut self,
         result: ClientResult<MessageContent>,
@@ -498,18 +508,29 @@ impl ChatController {
         self.client.as_deref_mut()
     }
 
+    #[cfg(feature = "mcp")]
     pub fn tool_manager(&self) -> Option<&McpManagerClient> {
         self.tool_manager.as_ref()
     }
 
+    #[cfg(feature = "mcp")]
     pub fn tool_manager_mut(&mut self) -> Option<&mut McpManagerClient> {
         self.tool_manager.as_mut()
     }
 
+    #[cfg(feature = "mcp")]
     pub fn set_tool_manager(&mut self, tool_manager: Option<McpManagerClient>) {
         self.tool_manager = tool_manager;
     }
 
+    #[cfg(not(feature = "mcp"))]
+    fn handle_execute(&mut self, _tool_calls: Vec<ToolCall>, _bot_id: Option<BotId>) {
+        self.dispatch_mutation(VecMutation::Push(Message::app_error(
+            "Tool execution failed: MCP support not compiled in",
+        )));
+    }
+
+    #[cfg(feature = "mcp")]
     fn handle_execute(&mut self, tool_calls: Vec<ToolCall>, bot_id: Option<BotId>) {
         let Some(mut spawner) = self.spawner.clone() else {
             self.dispatch_mutation(VecMutation::Push(Message::app_error(
@@ -667,6 +688,7 @@ impl ChatControllerBuilder {
         self
     }
 
+    #[cfg(feature = "mcp")]
     pub fn with_tool_manager(self, tool_manager: McpManagerClient) -> Self {
         self.0.lock().unwrap().set_tool_manager(Some(tool_manager));
         self
