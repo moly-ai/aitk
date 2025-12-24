@@ -25,7 +25,7 @@ impl Tool {
 }
 
 // Conversion traits for rmcp interop on native platforms
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "mcp"))]
 impl From<rmcp::model::Tool> for Tool {
     fn from(rmcp_tool: rmcp::model::Tool) -> Self {
         Tool {
@@ -36,7 +36,7 @@ impl From<rmcp::model::Tool> for Tool {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "mcp"))]
 impl From<Tool> for rmcp::model::Tool {
     fn from(tool: Tool) -> Self {
         rmcp::model::Tool {
