@@ -1,5 +1,5 @@
 cfg_if::cfg_if! {
-    if #[cfg(feature = "http")] {
+    if #[cfg(feature = "api-clients")] {
         pub mod openai;
         pub mod openai_image;
         pub mod openai_realtime;

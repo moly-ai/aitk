@@ -74,6 +74,7 @@ pub struct ChatController {
     accessor: ChatControllerAccessor,
     send_abort_on_drop: Option<AbortOnDropHandle>,
     load_bots_abort_on_drop: Option<AbortOnDropHandle>,
+    #[cfg(feature = "mcp")]
     execute_tools_abort_on_drop: Option<AbortOnDropHandle>,
     client: Option<Box<dyn BotClient>>,
     #[cfg(feature = "mcp")]
@@ -96,6 +97,7 @@ impl ChatController {
                 accessor: ChatControllerAccessor::new(weak.clone()),
                 send_abort_on_drop: None,
                 load_bots_abort_on_drop: None,
+                #[cfg(feature = "mcp")]
                 execute_tools_abort_on_drop: None,
                 client: None,
                 #[cfg(feature = "mcp")]

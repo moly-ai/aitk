@@ -5,12 +5,12 @@ pub use crate::protocol::*;
 
 // These are the clients that are most commonly used.
 pub use crate::clients::multi::MultiClient;
-#[cfg(feature = "http")]
+#[cfg(feature = "api-clients")]
 pub use crate::clients::openai::OpenAiClient;
 
 // These other clients are less commonly used.
 pub use crate::clients::{map::MapClient, tester::TesterClient};
-#[cfg(feature = "http")]
+#[cfg(feature = "api-clients")]
 pub use crate::clients::{openai_image::OpenAiImageClient, openai_realtime::OpenAiRealtimeClient};
 
 // If we re-export clients, then we may also re-export tools.

@@ -92,8 +92,16 @@ fn spawn_impl(fut: impl Future<Output = ()> + 'static) {
     wasm_bindgen_futures::spawn_local(fut);
 }
 
+/// A concrete something that can spawn asynchronous tasks.
+///
+/// The spawned tasks must be `Send` on native platforms, but not on WASM.
+///
+/// Note: Implementing this trait also implements the [`ErasedSpawner`] trait automatically.
 pub trait Spawner: Send {
+    /// Spawns the given future to run independently.
     fn spawn(&mut self, fut: impl PlatformSendFuture<Output = ()> + 'static);
+
+    /// Spawns the given future to run until the reference count of the returned handle drops to zero.
     fn spawn_abort_on_drop(
         &mut self,
         fut: impl PlatformSendFuture<Output = ()> + 'static,
@@ -106,15 +114,25 @@ pub trait Spawner: Send {
     }
 }
 
+/// A type-erased [`Spawner`], to spawn dynamic boxed futures.
+///
+/// The spawned tasks must be `Send` on native platforms, but not on WASM.
+///
+/// **Note:** Implementing the [`Spawner`] trait automatically implements this trait as well.
+/// The concrete type `Box<dyn ErasedSpawner>` also implements [`Spawner`] (and [`Clone`]).
 pub trait ErasedSpawner: Send {
+    /// Spawns the given boxed future to run independently.
     fn spawn_boxed(&mut self, fut: BoxPlatformSendFuture<'static, ()>);
+    /// Spawns the given boxed future to run until the reference count of the returned handle drops to zero.
     fn spawn_abort_on_drop_boxed(
         &mut self,
         fut: BoxPlatformSendFuture<'static, ()>,
     ) -> AbortOnDropHandle;
+    /// Clones this spawner into a `Box<dyn ErasedSpawner>`.
     fn clone_box(&self) -> Box<dyn ErasedSpawner>;
 }
 
+/// A basic spawner that uses the global [`spawn`] function in this module.
 #[cfg(feature = "async-rt")]
 #[derive(Clone, Debug)]
 pub struct BasicSpawner;
