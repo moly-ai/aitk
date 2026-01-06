@@ -1,0 +1,48 @@
+name: Check
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-compilation:
+    name: Check ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Test all features, even if one fails.
+      fail-fast: false
+      matrix:
+        # `include` defines specific cases to test, instead of the default cross-product behavior.
+        include:
+          - name: "No Features"
+            args: "--no-default-features"
+          - name: "Default Features"
+            args: ""
+          - name: "All Features"
+            args: "--all-features"
+          - name: "Feature: http"
+            args: "--no-default-features --features http"
+          - name: "Feature: async-rt"
+            args: "--no-default-features --features async-rt"
+          - name: "Feature: realtime"
+            args: "--no-default-features --features realtime"
+          - name: "Feature: mcp"
+            args: "--no-default-features --features mcp"
+          - name: "Feature: api-clients"
+            args: "--no-default-features --features api-clients"
+          - name: "Feature: full"
+            args: "--no-default-features --features full"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check compilation
+        run: cargo check --verbose ${{ matrix.args }}
