@@ -49,6 +49,7 @@ impl App {
         let controller = ChatController::builder()
             .with_client(client)
             .with_plugin_append(plugin)
+            .with_basic_spawner()
             .build_arc();
 
         let bot_id = BotId::new(&model, "");
