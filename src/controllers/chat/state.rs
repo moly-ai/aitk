@@ -69,12 +69,6 @@ impl ChatStateMutation {
                 state.load_status = status;
             }
             ChatStateMutation::SetBotId(bot_id) => {
-                if let Some(ref id) = bot_id {
-                    if !state.bots.iter().any(|b| &b.id == id) {
-                        log::warn!("Attempted to set non-existent bot: {:?}", id);
-                        return;
-                    }
-                }
                 state.bot_id = bot_id;
             }
             ChatStateMutation::MutateMessages(mutation) => {

@@ -47,6 +47,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let controller = ChatController::builder()
         .with_client(client)
         .with_plugin_append(Plugin::new(tx))
+        .with_basic_spawner()
         .build_arc();
 
     // Set the bot_id in the controller state
@@ -106,35 +107,56 @@ enum Event {
 }
 
 struct Plugin {
-    was_streaming: bool,
     tx: Sender<Event>,
 }
 
 impl Plugin {
     fn new(tx: Sender<Event>) -> Self {
-        Self {
-            was_streaming: false,
-            tx,
-        }
+        Self { tx }
     }
 }
 
 impl ChatControllerPlugin for Plugin {
-    fn on_state_ready(&mut self, state: &ChatState, _mutations: &[ChatStateMutation]) {
-        if state.is_streaming {
-            if let Some(message) = state.messages.last() {
-                if message.from != EntityId::User {
-                    self.tx
-                        .send(Event::Stream(message.content.text.clone()))
-                        .unwrap();
+    fn on_state_mutation(&mut self, mutation: &ChatStateMutation, state: &ChatState) {
+        let ChatStateMutation::MutateMessages(mutation) = mutation else {
+            return;
+        };
+
+        for effect in mutation.effects(&state.messages) {
+            let last_message = match effect {
+                VecEffect::Insert(index, items) => {
+                    if index == state.messages.len() {
+                        // Assume only one item inserted at the end
+                        items.first()
+                    } else {
+                        None
+                    }
                 }
+                VecEffect::Update(index, _old, new) => {
+                    if index == state.messages.len() - 1 {
+                        Some(new)
+                    } else {
+                        None
+                    }
+                }
+                VecEffect::Remove(_, _, _) => None,
+            };
+
+            let Some(message) = last_message else {
+                continue;
+            };
+
+            if message.from == EntityId::User {
+                continue;
+            }
+
+            self.tx
+                .send(Event::Stream(message.content.text.clone()))
+                .unwrap();
+
+            if !message.metadata.is_writing {
+                self.tx.send(Event::End).unwrap();
             }
         }
-
-        if self.was_streaming && !state.is_streaming {
-            self.tx.send(Event::End).unwrap();
-        }
-
-        self.was_streaming = state.is_streaming;
     }
 }

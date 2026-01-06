@@ -285,9 +285,7 @@ impl ChatController {
 
         match task {
             ChatTask::Send => {
-                if let Some(bot_id) = self.state.bot_id.clone() {
-                    self.handle_send(bot_id);
-                }
+                self.handle_send();
             }
             ChatTask::Stop => {
                 self.clear_streaming_artifacts();
@@ -301,9 +299,15 @@ impl ChatController {
         }
     }
 
-    fn handle_send(&mut self, bot_id: BotId) {
+    fn handle_send(&mut self) {
         // Clean previous streaming artifacts if any.
         self.clear_streaming_artifacts();
+
+        let Some(bot_id) = self.state.bot_id.clone() else {
+            self.dispatch_mutation(VecMutation::Push(Message::app_error("No bot selected")));
+
+            return;
+        };
 
         let Some(mut spawner) = self.spawner.clone() else {
             self.dispatch_mutation(VecMutation::Push(Message::app_error(
