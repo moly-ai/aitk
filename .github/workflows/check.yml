@@ -52,3 +52,25 @@ jobs:
 
       - name: Check compilation
         run: cargo check --verbose ${{ matrix.args }}
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --verbose --no-default-features --features full
+
+  build-wasm:
+    name: Build WASM32
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install wasm32-unknown-unknown
+        run: rustup target add wasm32-unknown-unknown
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --verbose --target wasm32-unknown-unknown --no-default-features --features full
