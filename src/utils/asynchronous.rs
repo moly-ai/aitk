@@ -74,14 +74,15 @@ fn spawn_impl(fut: impl Future<Output = ()> + 'static + Send) {
     if let Ok(handle) = Handle::try_current() {
         handle.spawn(fut);
     } else {
-        log::warn!("No Tokio runtime found on this native platform. Creating a shared runtime.");
         let rt = RUNTIME.get_or_init(|| {
+            log::warn!("No Tokio runtime found on this native platform. Creating a shared fallback runtime.");
             Builder::new_multi_thread()
+                // As a fallback, keep it lightweight just in case.
+                .worker_threads(1)
                 .enable_io()
                 .enable_time()
-                .thread_name("moly-kit-tokio")
                 .build()
-                .expect("Failed to create Tokio runtime for MolyKit")
+                .expect("Failed to create a shared fallback Tokio runtime")
         });
         rt.spawn(fut);
     }
