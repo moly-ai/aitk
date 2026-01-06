@@ -30,7 +30,7 @@ jobs:
           - name: "Feature: async-rt"
             args: "--no-default-features --features async-rt"
           - name: "Feature: realtime"
-            args: "--no-default-features --features realtime"
+            args: "--no-default-features --features realtime-clients"
           - name: "Feature: mcp"
             args: "--no-default-features --features mcp"
           - name: "Feature: api-clients"
