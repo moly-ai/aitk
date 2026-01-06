@@ -9,9 +9,11 @@ pub use crate::clients::multi::MultiClient;
 pub use crate::clients::openai::OpenAiClient;
 
 // These other clients are less commonly used.
-pub use crate::clients::{map::MapClient, tester::TesterClient};
 #[cfg(feature = "api-clients")]
-pub use crate::clients::{openai_image::OpenAiImageClient, openai_realtime::OpenAiRealtimeClient};
+pub use crate::clients::openai_image::OpenAiImageClient;
+#[cfg(feature = "realtime-clients")]
+pub use crate::clients::openai_realtime::OpenAiRealtimeClient;
+pub use crate::clients::{map::MapClient, tester::TesterClient};
 
 // If we re-export clients, then we may also re-export tools.
 #[cfg(feature = "mcp")]
