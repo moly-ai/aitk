@@ -10,7 +10,7 @@ use std::{
 
 use crate::utils::asynchronous::{BoxPlatformSendFuture, BoxPlatformSendStream};
 use crate::utils::{serde::deserialize_null_default, sse::parse_sse};
-use crate::{protocol::*, utils::errors::enrich_http_error};
+use crate::{protocol::*, utils::http::enrich_http_error};
 
 /// A model from the models endpoint.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
