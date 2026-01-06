@@ -527,7 +527,7 @@ impl OpenAiRealtimeClient {
                     // that borrow from the closure itself (lifetime issue)
                     macro_rules! send_message {
                         ($json:expr) => {{
-                            if let Err(e) = write.send(WsMessage::Text($json)).await {
+                            if let Err(e) = write.send(WsMessage::text($json)).await {
                                 log::error!("WebSocket send failed: {}", e);
                                 *is_connected_write.lock().unwrap() = false;
                                 let _ = event_sender_write.unbounded_send(RealtimeEvent::Error(
@@ -957,7 +957,7 @@ impl OpenAiRealtimeClient {
                     });
 
                     if let Ok(json) = serde_json::to_string(&test_message) {
-                        let _ = write.send(WsMessage::Text(json)).await;
+                        let _ = write.send(WsMessage::text(json)).await;
                     }
 
                     // Wait for a response with timeout
