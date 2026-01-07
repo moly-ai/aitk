@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-compilation:
+    name: Check ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Test all features, even if one fails.
+      fail-fast: false
+      matrix:
+        # `include` defines specific cases to test, instead of the default cross-product behavior.
+        include:
+          - name: "No Features"
+            args: "--no-default-features"
+          - name: "Default Features"
+            args: ""
+          - name: "All Features"
+            args: "--all-features"
+          - name: "Feature: http"
+            args: "--no-default-features --features http"
+          - name: "Feature: async-rt"
+            args: "--no-default-features --features async-rt"
+          - name: "Feature: realtime"
+            args: "--no-default-features --features realtime-clients"
+          - name: "Feature: mcp"
+            args: "--no-default-features --features mcp"
+          - name: "Feature: api-clients"
+            args: "--no-default-features --features api-clients"
+          - name: "Feature: full"
+            args: "--no-default-features --features full"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        # Graphical ones are probably required by the `rfd` crate.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwayland-dev libxkbcommon-dev
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check compilation
+        run: cargo check --verbose ${{ matrix.args }}
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --verbose --no-default-features --features full
+
+  build-wasm:
+    name: Build WASM32
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install wasm32-unknown-unknown
+        run: rustup target add wasm32-unknown-unknown
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --verbose --target wasm32-unknown-unknown --no-default-features --features full
+
+  run-tests:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwayland-dev libxkbcommon-dev
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --verbose --no-default-features --features full

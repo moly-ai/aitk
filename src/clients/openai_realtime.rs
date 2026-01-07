@@ -10,7 +10,7 @@ use crate::utils::asynchronous::{BoxPlatformSendFuture, BoxPlatformSendStream, s
 use futures::StreamExt;
 
 // Realtime enabled + not wasm
-#[cfg(all(feature = "realtime", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 use {futures::SinkExt, tokio_tungstenite::tungstenite::Message as WsMessage};
 
 // OpenAI Realtime API message structures
@@ -383,7 +383,7 @@ impl OpenAiRealtimeClient {
             let (command_sender, mut command_receiver) = futures::channel::mpsc::unbounded();
             let is_connected = Arc::new(Mutex::new(true));
 
-            #[cfg(all(feature = "realtime", not(target_arch = "wasm32")))]
+            #[cfg(not(target_arch = "wasm32"))]
             {
                 // Create WebSocket connection to OpenAI Realtime API
                 // If the provider is OpenAI, include the model to the url
@@ -527,7 +527,7 @@ impl OpenAiRealtimeClient {
                     // that borrow from the closure itself (lifetime issue)
                     macro_rules! send_message {
                         ($json:expr) => {{
-                            if let Err(e) = write.send(WsMessage::Text($json)).await {
+                            if let Err(e) = write.send(WsMessage::text($json)).await {
                                 log::error!("WebSocket send failed: {}", e);
                                 *is_connected_write.lock().unwrap() = false;
                                 let _ = event_sender_write.unbounded_send(RealtimeEvent::Error(
@@ -747,7 +747,7 @@ impl OpenAiRealtimeClient {
                 });
             }
 
-            #[cfg(not(all(feature = "realtime", not(target_arch = "wasm32"))))]
+            #[cfg(target_arch = "wasm32")]
             {
                 // Fallback mock implementation when websocket feature is not enabled or on WASM
                 let mut event_sender_clone = event_sender.clone();
@@ -768,7 +768,7 @@ impl OpenAiRealtimeClient {
         Box::pin(future)
     }
 
-    #[cfg(all(feature = "realtime", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     fn build_websocket_request(
         url_str: &str,
         api_key: &str,
@@ -803,7 +803,7 @@ impl OpenAiRealtimeClient {
             .map_err(|e| e.into())
     }
 
-    #[cfg(all(feature = "realtime", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     async fn connect_with_redirects(
         url_str: &str,
         api_key: &str,
@@ -915,7 +915,7 @@ impl OpenAiRealtimeClient {
 
     /// Test WebSocket connection to validate credentials and connectivity.
     /// For OpenAI, this also validates the API key by sending a session update.
-    #[cfg(all(feature = "realtime", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     async fn test_connection(address: &str, api_key: &str) -> ClientResult<()> {
         use futures::{SinkExt, StreamExt};
         use std::time::Duration;
@@ -957,7 +957,7 @@ impl OpenAiRealtimeClient {
                     });
 
                     if let Ok(json) = serde_json::to_string(&test_message) {
-                        let _ = write.send(WsMessage::Text(json)).await;
+                        let _ = write.send(WsMessage::text(json)).await;
                     }
 
                     // Wait for a response with timeout
@@ -1079,7 +1079,7 @@ impl BotClient for OpenAiRealtimeClient {
 
         let future = async move {
             // Test the WebSocket connection first to validate credentials
-            #[cfg(all(feature = "realtime", not(target_arch = "wasm32")))]
+            #[cfg(not(target_arch = "wasm32"))]
             {
                 // Check if this is a local provider (Dora)
                 let is_local = address.contains("127.0.0.1") || address.contains("localhost");

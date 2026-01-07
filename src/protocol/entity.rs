@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::fmt;
 use std::sync::Arc;
 
-#[cfg(feature = "json")]
 use serde::{Deserialize, Serialize};
 
 /// The picture/avatar of an entity that may be represented/encoded in different ways.
@@ -29,8 +28,7 @@ impl EntityAvatar {
 }
 
 /// Indentify the entities that are recognized by this crate, mainly in a chat.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize)]
 pub enum EntityId {
     /// Represents the user operating this app.
     User,
@@ -55,8 +53,7 @@ pub enum EntityId {
 }
 
 /// Represents the capabilities of a bot
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BotCapability {
     /// Bot supports realtime audio communication
     Realtime,
@@ -67,8 +64,7 @@ pub enum BotCapability {
 }
 
 /// Set of capabilities that a bot supports
-#[derive(Clone, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct BotCapabilities {
     capabilities: HashSet<BotCapability>,
 }
@@ -125,8 +121,7 @@ pub struct Bot {
 /// local id and the domain or url of that provider.
 ///
 /// For serialization, this is encoded as a single string.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize)]
 pub struct BotId(Arc<str>);
 
 impl BotId {

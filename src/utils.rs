@@ -1,11 +1,13 @@
 //! Internally used to hold utility modules but exposes some very helpful ones.
 
 pub mod asynchronous;
-pub mod errors;
+#[cfg(feature = "http")]
+pub mod http;
 pub(crate) mod platform;
-#[cfg(feature = "json")]
 pub(crate) mod serde;
 pub mod sse;
 pub(crate) mod string;
-pub(crate) mod tool_execution;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod thread;
+pub mod tool;
 pub mod vec;

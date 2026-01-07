@@ -1,10 +1,11 @@
 //! Framework-agnostic state management to implement a `Chat` component/widget/element.
 
+#[cfg(feature = "mcp")]
+use crate::{mcp::mcp_manager::McpManagerClient, utils::tool::display_name_from_namespaced};
 use crate::{
-    mcp::mcp_manager::{McpManagerClient, display_name_from_namespaced},
     protocol::*,
     utils::{
-        asynchronous::{AbortOnDropHandle, spawn_abort_on_drop},
+        asynchronous::{AbortOnDropHandle, ErasedSpawner, Spawner},
         vec::VecMutation,
     },
 };
@@ -73,9 +74,12 @@ pub struct ChatController {
     accessor: ChatControllerAccessor,
     send_abort_on_drop: Option<AbortOnDropHandle>,
     load_bots_abort_on_drop: Option<AbortOnDropHandle>,
+    #[cfg(feature = "mcp")]
     execute_tools_abort_on_drop: Option<AbortOnDropHandle>,
     client: Option<Box<dyn BotClient>>,
+    #[cfg(feature = "mcp")]
     tool_manager: Option<McpManagerClient>,
+    spawner: Option<Box<dyn ErasedSpawner>>,
 }
 
 impl ChatController {
@@ -93,15 +97,35 @@ impl ChatController {
                 accessor: ChatControllerAccessor::new(weak.clone()),
                 send_abort_on_drop: None,
                 load_bots_abort_on_drop: None,
+                #[cfg(feature = "mcp")]
                 execute_tools_abort_on_drop: None,
                 client: None,
+                #[cfg(feature = "mcp")]
                 tool_manager: None,
+                spawner: None,
             })
         })
     }
 
+    /// Convenience builder for [`ChatController`].
     pub fn builder() -> ChatControllerBuilder {
         ChatControllerBuilder::new()
+    }
+
+    /// Sets the spawner used to spawn async tasks.
+    pub fn set_spawner<S>(&mut self, spawner: Option<S>)
+    where
+        S: ErasedSpawner + 'static,
+    {
+        self.spawner = spawner.map(|s| Box::new(s) as Box<dyn ErasedSpawner>);
+    }
+
+    /// Uses [`crate::utils::asynchronous::BasicSpawner`] to spawn async tasks.
+    ///
+    /// See documentation there for details.
+    #[cfg(feature = "async-rt")]
+    pub fn set_basic_spawner(&mut self) {
+        self.set_spawner(Some(crate::utils::asynchronous::BasicSpawner));
     }
 
     /// Registers a plugin to extend the controller behavior. Runs after all other plugins.
@@ -266,9 +290,7 @@ impl ChatController {
 
         match task {
             ChatTask::Send => {
-                if let Some(bot_id) = self.state.bot_id.clone() {
-                    self.handle_send(bot_id);
-                }
+                self.handle_send();
             }
             ChatTask::Stop => {
                 self.clear_streaming_artifacts();
@@ -282,9 +304,23 @@ impl ChatController {
         }
     }
 
-    fn handle_send(&mut self, bot_id: BotId) {
+    fn handle_send(&mut self) {
         // Clean previous streaming artifacts if any.
         self.clear_streaming_artifacts();
+
+        let Some(bot_id) = self.state.bot_id.clone() else {
+            self.dispatch_mutation(VecMutation::Push(Message::app_error("No bot selected")));
+
+            return;
+        };
+
+        let Some(mut spawner) = self.spawner.clone() else {
+            self.dispatch_mutation(VecMutation::Push(Message::app_error(
+                "No async spawner configured",
+            )));
+
+            return;
+        };
 
         let Some(mut client) = self.client.clone() else {
             self.dispatch_mutation(VecMutation::Push(Message::app_error(
@@ -315,13 +351,8 @@ impl ChatController {
             .collect::<Vec<_>>();
 
         let controller = self.accessor.clone();
-        self.send_abort_on_drop = Some(spawn_abort_on_drop(async move {
-            let Some(tools) = controller.lock_with(|c| {
-                c.tool_manager
-                    .as_ref()
-                    .map(|tm| tm.get_all_namespaced_tools())
-                    .unwrap_or_default()
-            }) else {
+        self.send_abort_on_drop = Some(spawner.spawn_abort_on_drop(async move {
+            let Some(tools) = controller.lock_with(|c| c.get_all_namespaced_tools()) else {
                 return;
             };
 
@@ -386,6 +417,14 @@ impl ChatController {
     fn handle_load(&mut self) {
         self.dispatch_mutation(ChatStateMutation::SetLoadStatus(Status::Working));
 
+        let Some(mut spawner) = self.spawner.clone() else {
+            self.dispatch_mutation(ChatStateMutation::SetLoadStatus(Status::Error));
+            self.dispatch_mutation(VecMutation::Push(Message::app_error(
+                "No async spawner configured",
+            )));
+            return;
+        };
+
         let client = match self.client.clone() {
             Some(c) => c,
             None => {
@@ -398,7 +437,7 @@ impl ChatController {
         };
 
         let controller = self.accessor.clone();
-        self.load_bots_abort_on_drop = Some(spawn_abort_on_drop(async move {
+        self.load_bots_abort_on_drop = Some(spawner.spawn_abort_on_drop(async move {
             let (bots, errors) = client.bots().await.into_value_and_errors();
             controller.lock_with(move |c| {
                 if errors.is_empty() {
@@ -413,6 +452,19 @@ impl ChatController {
                 c.dispatch_mutation(VecMutation::Extend(messages));
             });
         }));
+    }
+
+    #[cfg(feature = "mcp")]
+    fn get_all_namespaced_tools(&self) -> Vec<Tool> {
+        self.tool_manager
+            .as_ref()
+            .map(|tm| tm.get_all_namespaced_tools())
+            .unwrap_or_default()
+    }
+
+    #[cfg(not(feature = "mcp"))]
+    fn get_all_namespaced_tools(&self) -> Vec<Tool> {
+        Vec::new()
     }
 
     fn handle_message_content(
@@ -467,19 +519,36 @@ impl ChatController {
         self.client.as_deref_mut()
     }
 
+    #[cfg(feature = "mcp")]
     pub fn tool_manager(&self) -> Option<&McpManagerClient> {
         self.tool_manager.as_ref()
     }
 
+    #[cfg(feature = "mcp")]
     pub fn tool_manager_mut(&mut self) -> Option<&mut McpManagerClient> {
         self.tool_manager.as_mut()
     }
 
+    #[cfg(feature = "mcp")]
     pub fn set_tool_manager(&mut self, tool_manager: Option<McpManagerClient>) {
         self.tool_manager = tool_manager;
     }
 
+    #[cfg(not(feature = "mcp"))]
+    fn handle_execute(&mut self, _tool_calls: Vec<ToolCall>, _bot_id: Option<BotId>) {
+        self.dispatch_mutation(VecMutation::Push(Message::app_error(
+            "Tool execution failed: MCP support not compiled in",
+        )));
+    }
+
+    #[cfg(feature = "mcp")]
     fn handle_execute(&mut self, tool_calls: Vec<ToolCall>, bot_id: Option<BotId>) {
+        let Some(mut spawner) = self.spawner.clone() else {
+            self.dispatch_mutation(VecMutation::Push(Message::app_error(
+                "Tool execution failed: No async spawner configured",
+            )));
+            return;
+        };
         let Some(tool_manager) = self.tool_manager.clone() else {
             self.dispatch_mutation(VecMutation::Push(Message::app_error(
                 "Tool execution failed: Tool manager not available",
@@ -514,7 +583,7 @@ impl ChatController {
         self.dispatch_mutation(VecMutation::Push(loading_message));
         self.dispatch_mutation(ChatStateMutation::SetIsStreaming(true));
 
-        self.execute_tools_abort_on_drop = Some(spawn_abort_on_drop(async move {
+        self.execute_tools_abort_on_drop = Some(spawner.spawn_abort_on_drop(async move {
             // Execute tool calls using MCP manager
             let tool_results = tool_manager.execute_tool_calls(tool_calls.clone()).await;
 
@@ -531,10 +600,8 @@ impl ChatController {
                 if result.is_error {
                     format!("🔧 Tool '{}' failed:\n{}", display_name, result.content)
                 } else {
-                    let summary = crate::utils::tool_execution::create_tool_output_summary(
-                        tool_name,
-                        &result.content,
-                    );
+                    let summary =
+                        crate::utils::tool::create_tool_output_summary(tool_name, &result.content);
                     format!(
                         "🔧 Tool '{}' executed successfully:\n`{}`",
                         display_name, summary
@@ -553,7 +620,7 @@ impl ChatController {
                     if result.is_error {
                         text.push_str(&format!("**{}** ❌: {}\n\n", display_name, result.content));
                     } else {
-                        let summary = crate::utils::tool_execution::create_tool_output_summary(
+                        let summary = crate::utils::tool::create_tool_output_summary(
                             tool_name,
                             &result.content,
                         );
@@ -594,6 +661,24 @@ impl ChatControllerBuilder {
         Self(ChatController::new_arc())
     }
 
+    /// Sets the spawner used to spawn async tasks.
+    pub fn with_spawner<S>(self, spawner: S) -> Self
+    where
+        S: ErasedSpawner + 'static,
+    {
+        self.0.lock().unwrap().set_spawner(Some(spawner));
+        self
+    }
+
+    /// Uses [`crate::utils::asynchronous::BasicSpawner`] to spawn async tasks.
+    ///
+    /// See documentation there for details.
+    #[cfg(feature = "async-rt")]
+    pub fn with_basic_spawner(self) -> Self {
+        self.0.lock().unwrap().set_basic_spawner();
+        self
+    }
+
     pub fn with_client<C>(self, client: C) -> Self
     where
         C: BotClient + 'static,
@@ -618,6 +703,7 @@ impl ChatControllerBuilder {
         self
     }
 
+    #[cfg(feature = "mcp")]
     pub fn with_tool_manager(self, tool_manager: McpManagerClient) -> Self {
         self.0.lock().unwrap().set_tool_manager(Some(tool_manager));
         self

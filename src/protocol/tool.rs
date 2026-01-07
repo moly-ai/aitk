@@ -1,13 +1,11 @@
-#[cfg(feature = "json")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tool {
     pub name: String,
     pub description: Option<String>,
     /// JSON Schema object defining the expected parameters for the tool
-    #[cfg_attr(feature = "json", serde(default))]
+    #[serde(default)]
     pub input_schema: std::sync::Arc<serde_json::Map<String, serde_json::Value>>,
 }
 
@@ -25,7 +23,7 @@ impl Tool {
 }
 
 // Conversion traits for rmcp interop on native platforms
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "mcp"))]
 impl From<rmcp::model::Tool> for Tool {
     fn from(rmcp_tool: rmcp::model::Tool) -> Self {
         Tool {
@@ -36,7 +34,7 @@ impl From<rmcp::model::Tool> for Tool {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "mcp"))]
 impl From<Tool> for rmcp::model::Tool {
     fn from(tool: Tool) -> Self {
         rmcp::model::Tool {
@@ -50,8 +48,7 @@ impl From<Tool> for rmcp::model::Tool {
 }
 
 /// Permission status for tool call execution
-#[derive(Clone, PartialEq, Debug, Default)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize)]
 pub enum ToolCallPermissionStatus {
     /// Waiting for user decision
     #[default]
@@ -63,8 +60,7 @@ pub enum ToolCallPermissionStatus {
 }
 
 /// Represents a function/tool call made by the AI
-#[derive(Clone, PartialEq, Debug, Default)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize)]
 pub struct ToolCall {
     /// Unique identifier for this tool call
     pub id: String,
@@ -73,13 +69,12 @@ pub struct ToolCall {
     /// Arguments passed to the tool (JSON)
     pub arguments: serde_json::Map<String, serde_json::Value>,
     /// Permission status for this tool call
-    #[cfg_attr(feature = "json", serde(default))]
+    #[serde(default)]
     pub permission_status: ToolCallPermissionStatus,
 }
 
 /// Represents the result of a tool call execution
-#[derive(Clone, PartialEq, Debug)]
-#[cfg_attr(feature = "json", derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct ToolResult {
     /// The tool call ID this result corresponds to
     pub tool_call_id: String,

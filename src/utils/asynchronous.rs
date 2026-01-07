@@ -58,6 +58,7 @@ pub type BoxPlatformSendStream<'a, T> = Pin<Box<dyn PlatformSendStream<Item = T>
 /// **Note:** This function may spawn it's own runtime if it can't find an existing one.
 /// Currently, Makepad doesn't expose the entry point in certain platforms (like Android),
 /// making harder to configure a runtime manually.
+#[cfg(feature = "async-rt")]
 pub fn spawn(fut: impl PlatformSendFuture<Output = ()> + 'static) {
     spawn_impl(fut);
 }
@@ -73,14 +74,15 @@ fn spawn_impl(fut: impl Future<Output = ()> + 'static + Send) {
     if let Ok(handle) = Handle::try_current() {
         handle.spawn(fut);
     } else {
-        log::warn!("No Tokio runtime found on this native platform. Creating a shared runtime.");
         let rt = RUNTIME.get_or_init(|| {
+            log::warn!("No Tokio runtime found on this native platform. Creating a shared fallback runtime.");
             Builder::new_multi_thread()
+                // As a fallback, keep it lightweight just in case.
+                .worker_threads(1)
                 .enable_io()
                 .enable_time()
-                .thread_name("moly-kit-tokio")
                 .build()
-                .expect("Failed to create Tokio runtime for MolyKit")
+                .expect("Failed to create a shared fallback Tokio runtime")
         });
         rt.spawn(fut);
     }
@@ -91,14 +93,101 @@ fn spawn_impl(fut: impl Future<Output = ()> + 'static) {
     wasm_bindgen_futures::spawn_local(fut);
 }
 
+/// A concrete something that can spawn asynchronous tasks.
+///
+/// The spawned tasks must be `Send` on native platforms, but not on WASM.
+///
+/// Note: Implementing this trait also implements the [`ErasedSpawner`] trait automatically.
+pub trait Spawner: Send {
+    /// Spawns the given future to run independently.
+    fn spawn(&mut self, fut: impl PlatformSendFuture<Output = ()> + 'static);
+
+    /// Spawns the given future to run until the reference count of the returned handle drops to zero.
+    fn spawn_abort_on_drop(
+        &mut self,
+        fut: impl PlatformSendFuture<Output = ()> + 'static,
+    ) -> AbortOnDropHandle {
+        let (abortable_fut, handle) = abort_on_drop(fut);
+        self.spawn(async move {
+            let _ = abortable_fut.await;
+        });
+        handle
+    }
+}
+
+/// A type-erased [`Spawner`], to spawn dynamic boxed futures.
+///
+/// The spawned tasks must be `Send` on native platforms, but not on WASM.
+///
+/// **Note:** Implementing the [`Spawner`] trait automatically implements this trait as well.
+/// The concrete type `Box<dyn ErasedSpawner>` also implements [`Spawner`] (and [`Clone`]).
+pub trait ErasedSpawner: Send {
+    /// Spawns the given boxed future to run independently.
+    fn spawn_boxed(&mut self, fut: BoxPlatformSendFuture<'static, ()>);
+    /// Spawns the given boxed future to run until the reference count of the returned handle drops to zero.
+    fn spawn_abort_on_drop_boxed(
+        &mut self,
+        fut: BoxPlatformSendFuture<'static, ()>,
+    ) -> AbortOnDropHandle;
+    /// Clones this spawner into a `Box<dyn ErasedSpawner>`.
+    fn clone_box(&self) -> Box<dyn ErasedSpawner>;
+}
+
+/// A basic spawner that uses the global [`spawn`] function in this module.
+#[cfg(feature = "async-rt")]
+#[derive(Clone, Debug)]
+pub struct BasicSpawner;
+
+#[cfg(feature = "async-rt")]
+impl Spawner for BasicSpawner {
+    fn spawn(&mut self, fut: impl PlatformSendFuture<Output = ()> + 'static) {
+        spawn(fut);
+    }
+}
+
+impl Spawner for () {
+    fn spawn(&mut self, _fut: impl PlatformSendFuture<Output = ()> + 'static) {}
+}
+
+impl<T> ErasedSpawner for T
+where
+    T: Spawner + Clone + 'static,
+{
+    fn spawn_boxed(&mut self, fut: BoxPlatformSendFuture<'static, ()>) {
+        self.spawn(fut);
+    }
+    fn spawn_abort_on_drop_boxed(
+        &mut self,
+        fut: BoxPlatformSendFuture<'static, ()>,
+    ) -> AbortOnDropHandle {
+        self.spawn_abort_on_drop(fut)
+    }
+    fn clone_box(&self) -> Box<dyn ErasedSpawner> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn ErasedSpawner> {
+    fn clone(&self) -> Self {
+        self.as_ref().clone_box()
+    }
+}
+
+impl Spawner for Box<dyn ErasedSpawner> {
+    fn spawn(&mut self, fut: impl PlatformSendFuture<Output = ()> + 'static) {
+        self.as_mut().spawn_boxed(Box::pin(fut));
+    }
+}
+
 /// Cross-platform async sleep function.
+#[cfg(feature = "async-rt")]
 pub async fn sleep(duration: std::time::Duration) {
-    #[cfg(all(feature = "async-rt", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     {
         tokio::time::sleep(duration).await;
     }
 
-    #[cfg(all(feature = "async-rt", target_arch = "wasm32"))]
+    #[cfg(target_arch = "wasm32")]
     {
         wasm_bindgen_futures::JsFuture::from(js_sys::Promise::new(&mut |resolve, _| {
             web_sys::window()
@@ -178,6 +267,7 @@ mod abort_on_drop {
     /// Note: If you need to distinguish if the future was aborted or completed,
     /// you should use [`abort_on_drop`] and spawn the future manually instead.
     #[must_use]
+    #[cfg(feature = "async-rt")]
     pub fn spawn_abort_on_drop(
         fut: impl PlatformSendFuture<Output = ()> + 'static,
     ) -> AbortOnDropHandle {
