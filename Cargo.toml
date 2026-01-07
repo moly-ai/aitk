@@ -23,7 +23,9 @@ serde_json = { version = "1.0.149" }
 base64 = { version = "0.22.1" }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux", target_arch = "wasm32"))'.dependencies]
-rfd = "0.17.1"
+# 0.17.1 accidentally bumped its minimum Rust version https://github.com/PolyMeilex/rfd/issues/302
+# causing issues in Ubuntu. So let's keep using 0.15.3 until the patch is published.
+rfd = { version = "0.15.3", features = ["ashpd", "urlencoding", "xdg-portal"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "fs", "time"], optional = true }
