@@ -107,10 +107,12 @@ impl ChatController {
         })
     }
 
+    /// Convenience builder for [`ChatController`].
     pub fn builder() -> ChatControllerBuilder {
         ChatControllerBuilder::new()
     }
 
+    /// Sets the spawner used to spawn async tasks.
     pub fn set_spawner<S>(&mut self, spawner: Option<S>)
     where
         S: ErasedSpawner + 'static,
@@ -118,6 +120,9 @@ impl ChatController {
         self.spawner = spawner.map(|s| Box::new(s) as Box<dyn ErasedSpawner>);
     }
 
+    /// Uses [`crate::utils::asynchronous::BasicSpawner`] to spawn async tasks.
+    ///
+    /// See documentation there for details.
     #[cfg(feature = "async-rt")]
     pub fn set_basic_spawner(&mut self) {
         self.set_spawner(Some(crate::utils::asynchronous::BasicSpawner));
@@ -656,6 +661,7 @@ impl ChatControllerBuilder {
         Self(ChatController::new_arc())
     }
 
+    /// Sets the spawner used to spawn async tasks.
     pub fn with_spawner<S>(self, spawner: S) -> Self
     where
         S: ErasedSpawner + 'static,
@@ -664,6 +670,9 @@ impl ChatControllerBuilder {
         self
     }
 
+    /// Uses [`crate::utils::asynchronous::BasicSpawner`] to spawn async tasks.
+    ///
+    /// See documentation there for details.
     #[cfg(feature = "async-rt")]
     pub fn with_basic_spawner(self) -> Self {
         self.0.lock().unwrap().set_basic_spawner();
