@@ -13,6 +13,8 @@ pub use crate::clients::openai::OpenAiClient;
 pub use crate::clients::openai_image::OpenAiImageClient;
 #[cfg(feature = "realtime-clients")]
 pub use crate::clients::openai_realtime::OpenAiRealtimeClient;
+#[cfg(feature = "api-clients")]
+pub use crate::clients::openai_stt::OpenAiSttClient;
 pub use crate::clients::{map::MapClient, tester::TesterClient};
 
 // If we re-export clients, then we may also re-export tools.
