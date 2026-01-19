@@ -22,7 +22,7 @@ pub enum ClientErrorKind {
     /// the JSON response is not what we expected or is not JSON at all.
     Format,
 
-    /// A kind of error that is not contemplated by MolyKit at the client layer.
+    /// A kind of error that is not contemplated by this library at the client layer.
     Unknown,
 }
 
