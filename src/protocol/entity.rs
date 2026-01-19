@@ -54,17 +54,26 @@ pub enum EntityId {
 /// Represents the capabilities of a bot
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BotCapability {
-    /// Bot supports realtime audio communication
+    /// Bot supports text input.
+    TextInput,
+    /// Bot can answer with text output.
+    TextOutput,
+    /// Bot supports starting a realtime audio call for conversation.
     Realtime,
-    /// Bot supports image/file attachments
-    Attachments,
-    /// Bot supports function calling
+    /// Bot accepts attachments as input.
+    AttachmentInput,
+    /// Bot can produce attachments as output.
+    AttachmentOutput,
+    /// Bot supports function calling (tools).
     FunctionCalling,
 }
 
 /// Set of capabilities that a bot supports
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct BotCapabilities {
+    // TODO: Heap allocations, hashing, indirections, etc to store a known-size
+    // bunch of bools is probably an overkill. Consider switching the internal
+    // representation to something like the `enumset` crate, or the `bitflags` crate.
     capabilities: HashSet<BotCapability>,
 }
 
@@ -75,29 +84,41 @@ impl BotCapabilities {
         }
     }
 
-    pub fn with_capability(mut self, capability: BotCapability) -> Self {
-        self.capabilities.insert(capability);
-        self
+    pub fn all() -> Self {
+        let mut capabilities = HashSet::new();
+        capabilities.insert(BotCapability::TextInput);
+        capabilities.insert(BotCapability::TextOutput);
+        capabilities.insert(BotCapability::Realtime);
+        capabilities.insert(BotCapability::AttachmentInput);
+        capabilities.insert(BotCapability::AttachmentOutput);
+        capabilities.insert(BotCapability::FunctionCalling);
+        Self { capabilities }
+    }
+
+    pub fn with_capability(self, capability: BotCapability) -> Self {
+        self.with_capabilities([capability])
     }
 
     pub fn add_capability(&mut self, capability: BotCapability) {
-        self.capabilities.insert(capability);
+        self.add_capabilities([capability]);
+    }
+
+    pub fn with_capabilities(
+        mut self,
+        capabilities: impl IntoIterator<Item = BotCapability>,
+    ) -> Self {
+        self.add_capabilities(capabilities);
+        self
+    }
+
+    pub fn add_capabilities(&mut self, capabilities: impl IntoIterator<Item = BotCapability>) {
+        for capability in capabilities {
+            self.capabilities.insert(capability);
+        }
     }
 
     pub fn has_capability(&self, capability: &BotCapability) -> bool {
         self.capabilities.contains(capability)
-    }
-
-    pub fn supports_realtime(&self) -> bool {
-        self.has_capability(&BotCapability::Realtime)
-    }
-
-    pub fn supports_attachments(&self) -> bool {
-        self.has_capability(&BotCapability::Attachments)
-    }
-
-    pub fn supports_function_calling(&self) -> bool {
-        self.has_capability(&BotCapability::FunctionCalling)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &BotCapability> {
@@ -105,9 +126,28 @@ impl BotCapabilities {
     }
 }
 
+/// Represents a bot, which is an automated assistant of any kind (model, agent, etc).
+///
+/// # WARNING
+///
+/// This is an "ideal" representation. However, OpenAI-compatible APIs will only
+/// give us the model id (though the `/models` endpoint) and nothing else. Therefore,
+/// for most client implementations hitting such APIs, the name and the avatar may be
+/// set from the id, and capabilities will be a best-effort guess or a fixed set based
+/// on the client itself.
+///
+/// For example, the [`crate::clients::openai::OpenAiClient`] will simply list all
+/// models available at `/models`, with a [`BotCapability::TextOutput`] as this client
+/// is intended for text-based conversations. However, realtime and image models will also
+/// be there with that capability incorrectly set.
+///
+/// Depending on your use case, it recommended to either:
+/// - Ignore the capabilities field for [`Bot`]s coming from such clients.
+/// - Override them if you are working with concrete models you know the capabilities of.
+/// - Try to filter models that should not be listed by the client in the first place (e.g.,
+///   image and realtime models in a text-only client).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bot {
-    /// Unique internal identifier for the bot across all providers
     pub id: BotId,
     pub name: String,
     pub avatar: EntityAvatar,

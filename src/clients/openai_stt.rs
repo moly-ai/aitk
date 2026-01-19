@@ -173,7 +173,9 @@ impl BotClient for OpenAiSttClient {
                 id: BotId::new(id),
                 name: id.to_string(),
                 avatar: EntityAvatar::Text("W".into()),
-                capabilities: BotCapabilities::new().with_capability(BotCapability::Attachments),
+                // Guess expected capabilities. See [`Bot`] documentation to know why.
+                capabilities: BotCapabilities::new()
+                    .with_capabilities([BotCapability::AttachmentInput, BotCapability::TextOutput]),
             })
             .collect();
 

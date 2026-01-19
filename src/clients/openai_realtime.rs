@@ -1124,7 +1124,11 @@ impl BotClient for OpenAiRealtimeClient {
                     id: BotId::new(id),
                     name: id.to_string(),
                     avatar: EntityAvatar::Text("🎤".into()),
-                    capabilities: BotCapabilities::new().with_capability(BotCapability::Realtime),
+                    // Guess expected capabilities. See [`Bot`] documentation to know why.
+                    capabilities: BotCapabilities::new().with_capabilities([
+                        BotCapability::Realtime,
+                        BotCapability::FunctionCalling,
+                    ]),
                 })
                 .collect();
 

@@ -25,7 +25,7 @@ impl BotClient for TesterClient {
             id: BotId::new("tester"),
             name: "tester".to_string(),
             avatar: EntityAvatar::Text("T".into()),
-            capabilities: BotCapabilities::new(),
+            capabilities: BotCapabilities::all(),
         }]));
 
         Box::pin(future)

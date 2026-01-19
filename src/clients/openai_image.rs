@@ -220,7 +220,8 @@ impl BotClient for OpenAiImageClient {
                 id: BotId::new(id),
                 name: id.to_string(),
                 avatar: EntityAvatar::Text("I".into()),
-                capabilities: BotCapabilities::new(),
+                capabilities: BotCapabilities::new()
+                    .with_capabilities([BotCapability::AttachmentOutput, BotCapability::TextInput]),
             })
             .collect();
 
