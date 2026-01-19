@@ -1121,7 +1121,7 @@ impl BotClient for OpenAiRealtimeClient {
             let supported = models
                 .into_iter()
                 .map(|id| Bot {
-                    id: BotId::new(id, &address),
+                    id: BotId::new(id),
                     name: id.to_string(),
                     avatar: EntityAvatar::Text("🎤".into()),
                     capabilities: BotCapabilities::new().with_capability(BotCapability::Realtime),

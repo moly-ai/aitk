@@ -212,14 +212,12 @@ async fn attachment_from_url(
 
 impl BotClient for OpenAiImageClient {
     fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
-        let inner = self.0.read().unwrap().clone();
-
         // Hardcoded list of OpenAI-only image generation models that are currently
         // available and supported.
         let supported: Vec<Bot> = ["dall-e-2", "dall-e-3", "gpt-image-1", "gpt-image-1-mini"]
             .into_iter()
             .map(|id| Bot {
-                id: BotId::new(id, &inner.url),
+                id: BotId::new(id),
                 name: id.to_string(),
                 avatar: EntityAvatar::Text("I".into()),
                 capabilities: BotCapabilities::new(),

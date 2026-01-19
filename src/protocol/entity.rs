@@ -1,8 +1,7 @@
+use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::collections::HashSet;
 use std::fmt;
-use std::sync::Arc;
-
-use serde::{Deserialize, Serialize};
 
 /// The picture/avatar of an entity that may be represented/encoded in different ways.
 // TODO: Consider Arc<str> where applicable.
@@ -117,78 +116,65 @@ pub struct Bot {
 
 /// Identifies any kind of bot, local or remote, model or agent, whatever.
 ///
-/// It MUST be globally unique and stable. It should be generated from a provider
-/// local id and the domain or url of that provider.
-///
-/// For serialization, this is encoded as a single string.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize)]
-pub struct BotId(Arc<str>);
+/// Normally, this is just the model name or id as known by the provider.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Default, Serialize)]
+pub struct BotId(SmolStr);
+
+impl<'de> Deserialize<'de> for BotId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        /// V1 compatibility parser.
+        ///
+        /// The id is encoded as: <id_len>;<id>@<provider>.
+        /// `@` is simply a semantic separator, meaning (literally) "at".
+        /// The length is what is actually used for separating components allowing
+        /// these to include `@` characters.
+        ///
+        /// Example: `9;qwen:0.5b@http://localhost:11434/v1`
+        fn v1(raw: &SmolStr) -> Option<SmolStr> {
+            let (id_length, raw) = raw.split_once(';')?;
+            let id_length = id_length.parse::<usize>().ok()?;
+            let id = &raw[..id_length];
+            // + 1 skips the semantic `@` separator
+            let _provider = &raw[id_length + 1..];
+            Some(id.into())
+        }
+
+        // Read the raw payload.
+        let raw = SmolStr::deserialize(deserializer)?;
+
+        // Try to parse as v1 first.
+        if let Some(s) = v1(&raw) {
+            return Ok(BotId(s));
+        }
+
+        // Raw should be the current representation.
+        Ok(BotId(raw))
+    }
+}
 
 impl BotId {
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 
-    /// Creates a new bot id from a provider local id and a provider domain or url.
-    pub fn new(id: &str, provider: &str) -> Self {
-        // The id is encoded as: <id_len>;<id>@<provider>.
-        // `@` is simply a semantic separator, meaning (literally) "at".
-        // The length is what is actually used for separating components allowing
-        // these to include `@` characters.
-        let id = format!("{};{}@{}", id.len(), id, provider);
-        BotId(id.into())
+    /// Creates a new bot id from a provider specific id.
+    pub fn new(id: impl AsRef<str>) -> Self {
+        BotId(id.as_ref().into())
     }
 
-    fn deconstruct(&self) -> (usize, &str) {
-        let (id_length, raw) = self.0.split_once(';').expect("malformed bot id");
-        let id_length = id_length.parse::<usize>().expect("malformed bot id");
-        (id_length, raw)
-    }
-
-    /// The id of the bot as it is known by its provider.
+    /// The id of the bot as it is known by its provider. The "model name".
     ///
-    /// This may not be globally unique.
+    /// This should be equivalent to [`BotId::as_str`].
     pub fn id(&self) -> &str {
-        let (id_length, raw) = self.deconstruct();
-        &raw[..id_length]
-    }
-
-    /// The provider component of this bot id.
-    pub fn provider(&self) -> &str {
-        let (id_length, raw) = self.deconstruct();
-        // + 1 skips the semantic `@` separator
-        &raw[id_length + 1..]
+        self.as_str()
     }
 }
 
 impl fmt::Display for BotId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_bot_id() {
-        // Simple
-        let id = BotId::new("123", "example.com");
-        assert_eq!(id.as_str(), "3;123@example.com");
-        assert_eq!(id.id(), "123");
-        assert_eq!(id.provider(), "example.com");
-
-        // Dirty
-        let id = BotId::new("a;b@c", "https://ex@a@m;ple.co@m");
-        assert_eq!(id.as_str(), "5;a;b@c@https://ex@a@m;ple.co@m");
-        assert_eq!(id.id(), "a;b@c");
-        assert_eq!(id.provider(), "https://ex@a@m;ple.co@m");
-
-        // Similar yet different
-        let id1 = BotId::new("a@", "b");
-        let id2 = BotId::new("a", "@b");
-        assert_ne!(id1.as_str(), id2.as_str());
-        assert_ne!(id1, id2);
     }
 }

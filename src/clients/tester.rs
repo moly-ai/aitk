@@ -22,7 +22,7 @@ pub struct TesterClient;
 impl BotClient for TesterClient {
     fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
         let future = futures::future::ready(ClientResult::new_ok(vec![Bot {
-            id: BotId::new("tester", "tester"),
+            id: BotId::new("tester"),
             name: "tester".to_string(),
             avatar: EntityAvatar::Text("T".into()),
             capabilities: BotCapabilities::new(),

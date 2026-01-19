@@ -52,7 +52,7 @@ impl App {
             .with_basic_spawner()
             .build_arc();
 
-        let bot_id = BotId::new(&model, "");
+        let bot_id = BotId::new(&model);
         controller
             .lock()
             .unwrap()

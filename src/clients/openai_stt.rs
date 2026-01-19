@@ -163,8 +163,6 @@ impl OpenAiSttClient {
 
 impl BotClient for OpenAiSttClient {
     fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
-        let inner = self.0.read().unwrap().clone();
-
         // TODO: This is done in the image and realtime clients as well. But we
         // should stop doing this, as it makes the client less usable.
         // But is imposible to filter since capabilities are not exposed in the API.
@@ -172,7 +170,7 @@ impl BotClient for OpenAiSttClient {
         let supported: Vec<Bot> = ["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"]
             .into_iter()
             .map(|id| Bot {
-                id: BotId::new(id, &inner.url),
+                id: BotId::new(id),
                 name: id.to_string(),
                 avatar: EntityAvatar::Text("W".into()),
                 capabilities: BotCapabilities::new().with_capability(BotCapability::Attachments),

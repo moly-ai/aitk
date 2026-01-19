@@ -554,7 +554,7 @@ impl BotClient for OpenAiClient {
                 .data
                 .iter()
                 .map(|m| Bot {
-                    id: BotId::new(&m.id, &inner.url),
+                    id: BotId::new(&m.id),
                     name: m.id.clone(),
                     avatar: EntityAvatar::from_first_grapheme(&m.id.to_uppercase())
                         .unwrap_or_else(|| EntityAvatar::Text("?".into())),
