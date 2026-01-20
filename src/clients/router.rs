@@ -225,12 +225,12 @@ impl RouterClient {
     }
 
     /// Prefixes a bot id with the given key.
-    fn prefix(key: &str, bot_id: &BotId) -> BotId {
+    pub fn prefix(key: &str, bot_id: &BotId) -> BotId {
         BotId::new(format!("{}/{}", key, bot_id.as_str()))
     }
 
     /// Unprefixes a bot id, returning the key and the original bot id.
-    fn unprefix(bot_id: &BotId) -> Option<(&str, BotId)> {
+    pub fn unprefix(bot_id: &BotId) -> Option<(&str, BotId)> {
         let s = bot_id.as_str();
         let (key, id) = s.split_once('/')?;
         Some((key, BotId::new(id)))
