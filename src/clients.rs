@@ -12,4 +12,5 @@ pub mod openai_realtime;
 
 pub mod map;
 pub mod multi;
+pub mod router;
 pub mod tester;

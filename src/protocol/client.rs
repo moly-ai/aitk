@@ -227,6 +227,32 @@ impl<T> ClientResult<T> {
         (self.value, self.errors)
     }
 
+    /// Crates a [`ClientResult`] from an optional value and a list of errors,
+    /// failing if both are empty (as it would violate the invariant).
+    ///
+    /// The [`Err`] case will contain a default [`ClientError`] indicating that no value
+    /// nor errors were provided. You can forward this error into [`ClientResult::new_err`]
+    /// to construct a fallback result, but the error message is addressed to devs, not users.
+    ///
+    /// This method is esentially the inverse of [`ClientResult::into_value_and_errors`].
+    ///
+    /// This method can be used through the standard [`TryFrom`] trait as well,
+    /// when you have a tuple of `(Option<T>, Vec<ClientError>)`, either by calling
+    /// `try_from` or `try_into`.
+    pub fn try_from_value_and_errors(
+        value: Option<T>,
+        errors: Vec<ClientError>,
+    ) -> Result<Self, ClientError> {
+        if value.is_some() || !errors.is_empty() {
+            Ok(ClientResult::new_unchecked(value, errors))
+        } else {
+            Err(ClientError::new(
+                ClientErrorKind::Unknown,
+                "Cannot create ClientResult with no value and no errors.".into(),
+            ))
+        }
+    }
+
     /// Consume the result to convert it into a standard Result.
     pub fn into_result(self) -> Result<T, Vec<ClientError>> {
         if self.errors.is_empty() {
@@ -234,6 +260,14 @@ impl<T> ClientResult<T> {
         } else {
             Err(self.errors)
         }
+    }
+}
+
+impl<T> TryFrom<(Option<T>, Vec<ClientError>)> for ClientResult<T> {
+    type Error = ClientError;
+
+    fn try_from(value: (Option<T>, Vec<ClientError>)) -> Result<Self, Self::Error> {
+        ClientResult::try_from_value_and_errors(value.0, value.1)
     }
 }
 
