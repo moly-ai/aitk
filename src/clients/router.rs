@@ -19,6 +19,29 @@ struct Inner {
     items: HashMap<SmolStr, Item>,
 }
 
+/// A client that can be composed from multiple subclients to interact with all of them as one.
+///
+/// # Bot IDs
+///
+/// [`BotId`]s are prefixed with the key used to insert the subclient. Take that into account when
+/// calling [`send`](BotClient::send) or when reading the list of bots from [`bots`](BotClient::bots).
+///
+/// If you are just forwarding an id that came from [`bots`](BotClient::bots), to the [`send`](BotClient::send)
+/// method, you don't need to worry.
+///
+/// If you are creating [`BotId`]s manually you can use [`RouterClient::prefix`] and [`RouterClient::unprefix`]
+/// methods to help you.
+///
+/// # Cache
+///
+/// This router works by caching the results from calling [`bots`](BotClient::bots) on each sub-client.
+/// The method will only be called for a specific sub-client if there is no cached result yet, or if
+/// the cached result contains errors.
+///
+/// If a client is associated with a cached result, without errors, then its [`bots`](BotClient::bots) method
+/// will not be called again.
+///
+/// If you need to refresh the list of bots, you will need to invalidate the cache explicitly.
 #[derive(Clone, Default)]
 pub struct RouterClient {
     inner: Arc<Mutex<Inner>>,
@@ -122,6 +145,7 @@ impl RouterClient {
         Self::default()
     }
 
+    /// Invalidates the bots cache for all sub-clients.
     pub fn invalidate_all_bots_cache(&self) {
         let mut inner = self.inner.lock().unwrap();
         for item in inner.items.values_mut() {
@@ -129,6 +153,7 @@ impl RouterClient {
         }
     }
 
+    /// Invalidates the bots cache for the client with the given key.
     pub fn invalidate_bots_cache(&self, key: impl AsRef<str>) {
         let mut inner = self.inner.lock().unwrap();
         if let Some(item) = inner.items.get_mut(key.as_ref()) {
@@ -197,5 +222,17 @@ impl RouterClient {
                 entry.bots_result = Some(result);
             }
         }
+    }
+
+    /// Prefixes a bot id with the given key.
+    fn prefix(key: &str, bot_id: &BotId) -> BotId {
+        BotId::new(format!("{}/{}", key, bot_id.as_str()))
+    }
+
+    /// Unprefixes a bot id, returning the key and the original bot id.
+    fn unprefix(bot_id: &BotId) -> Option<(&str, BotId)> {
+        let s = bot_id.as_str();
+        let (key, id) = s.split_once('/')?;
+        Some((key, BotId::new(id)))
     }
 }
