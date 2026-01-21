@@ -12,18 +12,6 @@ use crate::utils::asynchronous::{BoxPlatformSendFuture, BoxPlatformSendStream};
 use crate::utils::{serde::deserialize_null_default, sse::parse_sse};
 use crate::{protocol::*, utils::http::enrich_http_error};
 
-/// A model from the models endpoint.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-struct Model {
-    id: String,
-}
-
-/// Response from the models endpoint.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-struct Models {
-    pub data: Vec<Model>,
-}
-
 /// The content of a [`ContentPart::ImageUrl`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct ImageUrlDetail {
@@ -134,19 +122,19 @@ impl From<&Tool> for FunctionTool {
 
 /// Tool call from OpenAI API
 #[derive(Clone, Debug, Deserialize)]
-struct OpenAIToolCall {
+struct OpenAiToolCall {
     #[serde(default)]
     pub id: String,
     #[serde(rename = "type")]
     #[serde(default)]
     #[allow(dead_code)] // tool_type is necessary for the OpenAI, but we don't use it
     pub tool_type: String,
-    pub function: OpenAIFunctionCall,
+    pub function: OpenAiFunctionCall,
 }
 
 /// Function call within a tool call
 #[derive(Clone, Debug, Deserialize)]
-struct OpenAIFunctionCall {
+struct OpenAiFunctionCall {
     #[serde(default)]
     pub name: String,
     #[serde(default)]
@@ -179,7 +167,7 @@ struct IncomingMessage {
     pub reasoning: String,
     /// Tool calls made by the assistant
     #[serde(default)]
-    pub tool_calls: Vec<OpenAIToolCall>,
+    pub tool_calls: Vec<OpenAiToolCall>,
 }
 /// A message being sent to the completions endpoint.
 #[derive(Clone, Debug, Serialize)]
@@ -491,93 +479,22 @@ impl OpenAiClient {
 impl BotClient for OpenAiClient {
     fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
         let inner = self.0.read().unwrap().clone();
-
-        let url = format!("{}/models", inner.url);
+        let client = inner.client;
+        let base_url = inner.url;
         let headers = inner.headers;
 
-        let request = inner.client.get(&url).headers(headers);
+        Box::pin(async move {
+            let capabilities = BotCapabilities::new().with_capabilities([
+                BotCapability::TextInput,
+                BotCapability::TextOutput,
+                BotCapability::AttachmentInput,
+                BotCapability::FunctionCalling,
+            ]);
 
-        let future = async move {
-            let response = match request.send().await {
-                Ok(response) => response,
-                Err(error) => {
-                    return ClientError::new_with_source(
-                        ClientErrorKind::Network,
-                        format!("An error ocurred sending a request to {url}."),
-                        Some(error),
-                    )
-                    .into();
-                }
-            };
-
-            if !response.status().is_success() {
-                let code = response.status().as_u16();
-                return ClientError::new(
-                    ClientErrorKind::Response,
-                    format!("Got unexpected HTTP status code {code} from {url}."),
-                )
-                .into();
-            }
-
-            let text = match response.text().await {
-                Ok(text) => text,
-                Err(error) => {
-                    return ClientError::new_with_source(
-                        ClientErrorKind::Format,
-                        format!("Could not parse the response from {url} as valid text."),
-                        Some(error),
-                    )
-                    .into();
-                }
-            };
-
-            if text.is_empty() {
-                return ClientError::new(
-                    ClientErrorKind::Format,
-                    format!("The response from {url} is empty."),
-                )
-                .into();
-            }
-
-            let models: Models = match serde_json::from_str(&text) {
-                Ok(models) => models,
-                Err(error) => {
-                    return ClientError::new_with_source(
-                        ClientErrorKind::Format,
-                        format!("Could not parse the response from {url} as JSON or its structure does not match the expected format."),
-                        Some(error),
-                    ).into();
-                }
-            };
-
-            let mut bots: Vec<Bot> = models
-                .data
-                .iter()
-                .map(|m| Bot {
-                    id: BotId::new(&m.id),
-                    name: m.id.clone(),
-                    avatar: EntityAvatar::from_first_grapheme(&m.id.to_uppercase())
-                        .unwrap_or_else(|| EntityAvatar::Text("?".into())),
-                    // Guess expected capabilities. See [`Bot`] documentation to know why.
-                    capabilities: BotCapabilities::new().with_capabilities([
-                        BotCapability::TextInput,
-                        BotCapability::TextOutput,
-                        BotCapability::AttachmentInput,
-                        BotCapability::FunctionCalling,
-                    ]),
-                })
-                .filter(|b| {
-                    // These will be handled by a separate client.
-                    !b.id.id().starts_with("dall-e") && !b.id.id().starts_with("gpt-image")
-                })
-                .collect();
-
-            bots.sort_by(|a, b| a.name.cmp(&b.name));
-
-            ClientResult::new_ok(bots)
-        };
-
-        Box::pin(future)
+            crate::utils::openai::get_bots(&client, &base_url, headers, &capabilities)
+                .await
+                .into()
+        })
     }
 
     fn clone_box(&self) -> Box<dyn BotClient> {

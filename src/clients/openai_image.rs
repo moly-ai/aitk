@@ -212,20 +212,19 @@ async fn attachment_from_url(
 
 impl BotClient for OpenAiImageClient {
     fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
-        // Hardcoded list of OpenAI-only image generation models that are currently
-        // available and supported.
-        let supported: Vec<Bot> = ["dall-e-2", "dall-e-3", "gpt-image-1", "gpt-image-1-mini"]
-            .into_iter()
-            .map(|id| Bot {
-                id: BotId::new(id),
-                name: id.to_string(),
-                avatar: EntityAvatar::Text("I".into()),
-                capabilities: BotCapabilities::new()
-                    .with_capabilities([BotCapability::AttachmentOutput, BotCapability::TextInput]),
-            })
-            .collect();
+        let inner = self.0.read().unwrap().clone();
+        let client = inner.client;
+        let base_url = inner.url;
+        let headers = inner.headers;
 
-        Box::pin(futures::future::ready(ClientResult::new_ok(supported)))
+        Box::pin(async move {
+            let capabilities = BotCapabilities::new()
+                .with_capabilities([BotCapability::TextInput, BotCapability::AttachmentOutput]);
+
+            crate::utils::openai::get_bots(&client, &base_url, headers, &capabilities)
+                .await
+                .into()
+        })
     }
 
     fn send(

@@ -271,6 +271,24 @@ impl<T> TryFrom<(Option<T>, Vec<ClientError>)> for ClientResult<T> {
     }
 }
 
+impl<T> From<Result<T, Vec<ClientError>>> for ClientResult<T> {
+    fn from(result: Result<T, Vec<ClientError>>) -> Self {
+        match result {
+            Ok(value) => ClientResult::new_ok(value),
+            Err(errors) => ClientResult::new_err(errors),
+        }
+    }
+}
+
+impl<T> From<Result<T, ClientError>> for ClientResult<T> {
+    fn from(result: Result<T, ClientError>) -> Self {
+        match result {
+            Ok(value) => ClientResult::new_ok(value),
+            Err(error) => ClientResult::new_err(vec![error]),
+        }
+    }
+}
+
 /// A standard interface to fetch bots information and send messages to them.
 ///
 /// Warning: Expect this to be cloned to avoid borrow checking issues with

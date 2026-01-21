@@ -163,23 +163,19 @@ impl OpenAiSttClient {
 
 impl BotClient for OpenAiSttClient {
     fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
-        // TODO: This is done in the image and realtime clients as well. But we
-        // should stop doing this, as it makes the client less usable.
-        // But is imposible to filter since capabilities are not exposed in the API.
-        // Capabilities may not be something this crate should worry about.
-        let supported: Vec<Bot> = ["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"]
-            .into_iter()
-            .map(|id| Bot {
-                id: BotId::new(id),
-                name: id.to_string(),
-                avatar: EntityAvatar::Text("W".into()),
-                // Guess expected capabilities. See [`Bot`] documentation to know why.
-                capabilities: BotCapabilities::new()
-                    .with_capabilities([BotCapability::AttachmentInput, BotCapability::TextOutput]),
-            })
-            .collect();
+        let inner = self.0.read().unwrap().clone();
+        let client = inner.client;
+        let base_url = inner.url;
+        let headers = inner.headers;
 
-        Box::pin(futures::future::ready(ClientResult::new_ok(supported)))
+        Box::pin(async move {
+            let capabilities = BotCapabilities::new()
+                .with_capabilities([BotCapability::AttachmentInput, BotCapability::TextOutput]);
+
+            crate::utils::openai::get_bots(&client, &base_url, headers, &capabilities)
+                .await
+                .into()
+        })
     }
 
     fn send(
