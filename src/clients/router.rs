@@ -3,8 +3,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use smol_str::SmolStr;
-
 use crate::protocol::*;
 use futures::StreamExt;
 
@@ -16,7 +14,7 @@ struct Item {
 
 #[derive(Clone, Default)]
 struct Inner {
-    items: HashMap<SmolStr, Item>,
+    items: HashMap<String, Item>,
 }
 
 /// A client that can be composed from multiple subclients to interact with all of them as one.
