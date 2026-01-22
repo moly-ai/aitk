@@ -66,6 +66,9 @@ pub enum BotCapability {
     AttachmentOutput,
     /// Bot supports function calling (tools).
     FunctionCalling,
+    /// The bot support unknown, non-standard capabilities. It may (or not) use
+    /// the `data` field in messages to encode extended information.
+    Custom,
 }
 
 /// Set of capabilities that a bot supports
