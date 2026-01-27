@@ -94,7 +94,7 @@ impl BotClient for RouterClient {
 
         Box::pin(
             futures::stream::once(async move {
-                let (key, id) = match bot_id.as_str().split_once('/') {
+                let (key, bot_id) = match RouterClient::unprefix(&bot_id) {
                     Some((k, i)) => (k, i),
                     None => {
                         let err = ClientError::new(
@@ -124,8 +124,6 @@ impl BotClient for RouterClient {
                         return stream;
                     }
                 };
-
-                let bot_id = BotId::new(id);
 
                 client.send(&bot_id, &messages, &tools)
             })
