@@ -488,6 +488,7 @@ impl BotClient for OpenAiClient {
                 BotCapability::TextInput,
                 BotCapability::TextOutput,
                 BotCapability::AttachmentInput,
+                BotCapability::AttachmentOutput,
                 BotCapability::FunctionCalling,
             ]);
 
