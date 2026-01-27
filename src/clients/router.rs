@@ -66,7 +66,7 @@ impl BotClient for RouterClient {
 
                     if let Some(bots) = result.value() {
                         value.as_mut().unwrap().extend(bots.iter().map(|bot| Bot {
-                            id: BotId::new(format!("{}/{}", key, bot.id.as_str())),
+                            id: RouterClient::prefix(key, &bot.id),
                             ..bot.clone()
                         }));
                     }
