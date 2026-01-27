@@ -234,7 +234,7 @@ impl<T> ClientResult<T> {
     /// nor errors were provided. You can forward this error into [`ClientResult::new_err`]
     /// to construct a fallback result, but the error message is addressed to devs, not users.
     ///
-    /// This method is esentially the inverse of [`ClientResult::into_value_and_errors`].
+    /// This method is essentially the inverse of [`ClientResult::into_value_and_errors`].
     ///
     /// This method can be used through the standard [`TryFrom`] trait as well,
     /// when you have a tuple of `(Option<T>, Vec<ClientError>)`, either by calling
