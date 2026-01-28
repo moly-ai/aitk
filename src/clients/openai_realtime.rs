@@ -1067,7 +1067,7 @@ impl BotClient for OpenAiRealtimeClient {
         Box::pin(stream)
     }
 
-    fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
+    fn bots(&mut self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
         // For Realtime, we're currently using `bots` for listing the supported models by the client,
         // rather than the specific supported models by the associated provider (makes things easier elsewhere).
         // Since both Dora and OpenAI are registered as supported providers in Moly, the models that don't
@@ -1121,10 +1121,12 @@ impl BotClient for OpenAiRealtimeClient {
             let supported = models
                 .into_iter()
                 .map(|id| Bot {
-                    id: BotId::new(id, &address),
+                    id: BotId::new(id),
                     name: id.to_string(),
                     avatar: EntityAvatar::Text("🎤".into()),
-                    capabilities: BotCapabilities::new().with_capability(BotCapability::Realtime),
+                    // Guess expected capabilities. See [`Bot`] documentation to know why.
+                    capabilities: BotCapabilities::new()
+                        .with_capabilities([BotCapability::AudioCall, BotCapability::ToolInput]),
                 })
                 .collect();
 

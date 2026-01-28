@@ -41,7 +41,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         client.set_key(&key)?;
     }
 
-    let bot_id = BotId::new(&model, "");
+    let bot_id = BotId::new(&model);
     let (tx, rx) = channel();
 
     let controller = ChatController::builder()

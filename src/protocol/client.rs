@@ -227,6 +227,32 @@ impl<T> ClientResult<T> {
         (self.value, self.errors)
     }
 
+    /// Crates a [`ClientResult`] from an optional value and a list of errors,
+    /// failing if both are empty (as it would violate the invariant).
+    ///
+    /// The [`Err`] case will contain a default [`ClientError`] indicating that no value
+    /// nor errors were provided. You can forward this error into [`ClientResult::new_err`]
+    /// to construct a fallback result, but the error message is addressed to devs, not users.
+    ///
+    /// This method is essentially the inverse of [`ClientResult::into_value_and_errors`].
+    ///
+    /// This method can be used through the standard [`TryFrom`] trait as well,
+    /// when you have a tuple of `(Option<T>, Vec<ClientError>)`, either by calling
+    /// `try_from` or `try_into`.
+    pub fn try_from_value_and_errors(
+        value: Option<T>,
+        errors: Vec<ClientError>,
+    ) -> Result<Self, ClientError> {
+        if value.is_some() || !errors.is_empty() {
+            Ok(ClientResult::new_unchecked(value, errors))
+        } else {
+            Err(ClientError::new(
+                ClientErrorKind::Unknown,
+                "Cannot create ClientResult with no value and no errors.".into(),
+            ))
+        }
+    }
+
     /// Consume the result to convert it into a standard Result.
     pub fn into_result(self) -> Result<T, Vec<ClientError>> {
         if self.errors.is_empty() {
@@ -237,14 +263,35 @@ impl<T> ClientResult<T> {
     }
 }
 
+impl<T> TryFrom<(Option<T>, Vec<ClientError>)> for ClientResult<T> {
+    type Error = ClientError;
+
+    fn try_from(value: (Option<T>, Vec<ClientError>)) -> Result<Self, Self::Error> {
+        ClientResult::try_from_value_and_errors(value.0, value.1)
+    }
+}
+
+impl<T> From<Result<T, Vec<ClientError>>> for ClientResult<T> {
+    fn from(result: Result<T, Vec<ClientError>>) -> Self {
+        match result {
+            Ok(value) => ClientResult::new_ok(value),
+            Err(errors) => ClientResult::new_err(errors),
+        }
+    }
+}
+
+impl<T> From<Result<T, ClientError>> for ClientResult<T> {
+    fn from(result: Result<T, ClientError>) -> Self {
+        match result {
+            Ok(value) => ClientResult::new_ok(value),
+            Err(error) => ClientResult::new_err(vec![error]),
+        }
+    }
+}
+
 /// A standard interface to fetch bots information and send messages to them.
 ///
-/// Warning: Expect this to be cloned to avoid borrow checking issues with
-/// makepad's widgets. Also, it may be cloned inside async contexts. So keep this
-/// cheap to clone and synced.
-///
-/// Note: Generics do not play well with makepad's widgets, so this trait relies
-/// on dynamic dispatch (with its limitations).
+/// Keep this [`Clone`] and [`Sync`] as it may be required by the async context.
 pub trait BotClient: Send {
     /// Send a message to a bot with support for streamed response.
     ///
@@ -259,16 +306,9 @@ pub trait BotClient: Send {
         tools: &[Tool],
     ) -> BoxPlatformSendStream<'static, ClientResult<MessageContent>>;
 
-    /// Interrupt the bot's current operation.
-    // TODO: There may be many chats with the same bot/model/agent so maybe this
-    // should be implemented by using cancellation tokens.
-    // fn stop(&mut self, bot: BotId);
-
     /// Bots available under this client.
     // NOTE: Could be a stream, but may add complexity rarely needed.
-    // TODO: Support partial results with errors for an union multi client/service
-    // later.
-    fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>>;
+    fn bots(&mut self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>>;
 
     /// Make a boxed dynamic clone of this client to pass around.
     fn clone_box(&self) -> Box<dyn BotClient>;

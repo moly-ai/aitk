@@ -3,6 +3,7 @@
 pub mod asynchronous;
 #[cfg(feature = "http")]
 pub mod http;
+pub(crate) mod openai;
 pub(crate) mod platform;
 pub(crate) mod serde;
 pub mod sse;
