@@ -425,7 +425,7 @@ impl ChatController {
             return;
         };
 
-        let client = match self.client.clone() {
+        let mut client = match self.client.clone() {
             Some(c) => c,
             None => {
                 self.dispatch_mutation(ChatStateMutation::SetLoadStatus(Status::Error));

@@ -66,7 +66,7 @@ impl<C: BotClient + 'static> BotClient for MapClient<C> {
         Box::new(self.clone())
     }
 
-    fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
+    fn bots(&mut self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
         let inner = self.inner.clone();
         let future = self.inner.lock().unwrap().client.bots();
 

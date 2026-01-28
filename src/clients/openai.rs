@@ -477,7 +477,7 @@ impl OpenAiClient {
 }
 
 impl BotClient for OpenAiClient {
-    fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
+    fn bots(&mut self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
         let inner = self.0.read().unwrap().clone();
         let client = inner.client;
         let base_url = inner.url;

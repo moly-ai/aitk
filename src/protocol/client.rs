@@ -291,12 +291,7 @@ impl<T> From<Result<T, ClientError>> for ClientResult<T> {
 
 /// A standard interface to fetch bots information and send messages to them.
 ///
-/// Warning: Expect this to be cloned to avoid borrow checking issues with
-/// makepad's widgets. Also, it may be cloned inside async contexts. So keep this
-/// cheap to clone and synced.
-///
-/// Note: Generics do not play well with makepad's widgets, so this trait relies
-/// on dynamic dispatch (with its limitations).
+/// Keep this [`Clone`] and [`Sync`] as it may be required by the async context.
 pub trait BotClient: Send {
     /// Send a message to a bot with support for streamed response.
     ///
@@ -311,16 +306,9 @@ pub trait BotClient: Send {
         tools: &[Tool],
     ) -> BoxPlatformSendStream<'static, ClientResult<MessageContent>>;
 
-    /// Interrupt the bot's current operation.
-    // TODO: There may be many chats with the same bot/model/agent so maybe this
-    // should be implemented by using cancellation tokens.
-    // fn stop(&mut self, bot: BotId);
-
     /// Bots available under this client.
     // NOTE: Could be a stream, but may add complexity rarely needed.
-    // TODO: Support partial results with errors for an union multi client/service
-    // later.
-    fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>>;
+    fn bots(&mut self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>>;
 
     /// Make a boxed dynamic clone of this client to pass around.
     fn clone_box(&self) -> Box<dyn BotClient>;

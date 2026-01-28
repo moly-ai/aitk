@@ -46,7 +46,7 @@ pub struct RouterClient {
 }
 
 impl BotClient for RouterClient {
-    fn bots(&self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
+    fn bots(&mut self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
         let me = self.clone();
         Box::pin(async move {
             me.cache_bots().await;
@@ -109,7 +109,7 @@ impl BotClient for RouterClient {
 
                 me.cache_bots().await;
 
-                let mut client = match me.get_client(&key) {
+                let mut client = match me.get_client_cloned(&key) {
                     Some(c) => c,
                     None => {
                         let err = ClientError::new(
@@ -175,13 +175,38 @@ impl RouterClient {
         inner.items.remove(key.as_ref());
     }
 
-    /// Gets a client by the key used to insert it.
-    pub fn get_client(&self, key: impl AsRef<str>) -> Option<Box<dyn BotClient>> {
+    /// Gets a client by the key used to insert it, cloning it.
+    pub fn get_client_cloned(&self, key: impl AsRef<str>) -> Option<Box<dyn BotClient>> {
+        self.read_client(key, |c| c.clone_box())
+    }
+
+    /// Access a client immutably by the key used to insert it.
+    ///
+    /// The closure will not be called if there is no client for the given key,
+    /// but this function will give `None` in that case.
+    #[must_use]
+    pub fn read_client<F, R>(&self, key: impl AsRef<str>, f: F) -> Option<R>
+    where
+        F: FnOnce(&Box<dyn BotClient>) -> R,
+    {
         let inner = self.inner.lock().unwrap();
+        inner.items.get(key.as_ref()).map(|item| f(&item.client))
+    }
+
+    /// Access a client mutably by the key used to insert it.
+    ///
+    /// The closure will not be called if there is no client for the given key,
+    /// but this function will give `None` in that case.
+    #[must_use]
+    pub fn write_client<F, R>(&self, key: impl AsRef<str>, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut Box<dyn BotClient>) -> R,
+    {
+        let mut inner = self.inner.lock().unwrap();
         inner
             .items
-            .get(key.as_ref())
-            .map(|item| item.client.clone())
+            .get_mut(key.as_ref())
+            .map(|item| f(&mut item.client))
     }
 
     /// Caches the bots from all sub-clients that have not been cached yet, or that have errors.
@@ -189,7 +214,7 @@ impl RouterClient {
         // Collect entries quickly, before any async operation, to avoid retaining
         // the lock across await points.
         // These entries are either uncached entries, or entries that contain errors.
-        let entries = self
+        let mut entries = self
             .inner
             .lock()
             .unwrap()
@@ -208,7 +233,7 @@ impl RouterClient {
             return;
         }
 
-        let bots = entries.iter().map(|(_, item)| item.client.bots());
+        let bots = entries.iter_mut().map(|(_, item)| item.client.bots());
         let bots = futures::future::join_all(bots).await;
 
         // Hold the lock to save the results.
