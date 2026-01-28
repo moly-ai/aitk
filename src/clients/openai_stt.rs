@@ -169,8 +169,8 @@ impl BotClient for OpenAiSttClient {
         let headers = inner.headers;
 
         Box::pin(async move {
-            let capabilities = BotCapabilities::new()
-                .with_capabilities([BotCapability::AttachmentInput, BotCapability::TextOutput]);
+            let capabilities =
+                BotCapabilities::new().with_capabilities([BotCapability::AttachmentInput]);
 
             crate::utils::openai::get_bots(&client, &base_url, headers, &capabilities)
                 .await

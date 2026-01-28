@@ -54,21 +54,14 @@ pub enum EntityId {
 /// Represents the capabilities of a bot
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BotCapability {
-    /// Bot supports text input.
+    /// Bot accepts text input.
     TextInput,
-    /// Bot can answer with text output.
-    TextOutput,
-    /// Bot supports starting a realtime audio call for conversation.
-    Realtime,
     /// Bot accepts attachments as input.
     AttachmentInput,
-    /// Bot can produce attachments as output.
-    AttachmentOutput,
-    /// Bot supports function calling (tools).
-    FunctionCalling,
-    /// The bot support unknown, non-standard capabilities. It may (or not) use
-    /// the `data` field in messages to encode extended information.
-    Custom,
+    /// Bot can accepts and works with tools.
+    ToolInput,
+    /// Bot supports starting a realtime audio call for conversation.
+    AudioCall,
 }
 
 /// Set of capabilities that a bot supports
@@ -90,11 +83,9 @@ impl BotCapabilities {
     pub fn all() -> Self {
         let mut capabilities = HashSet::new();
         capabilities.insert(BotCapability::TextInput);
-        capabilities.insert(BotCapability::TextOutput);
-        capabilities.insert(BotCapability::Realtime);
+        capabilities.insert(BotCapability::AudioCall);
         capabilities.insert(BotCapability::AttachmentInput);
-        capabilities.insert(BotCapability::AttachmentOutput);
-        capabilities.insert(BotCapability::FunctionCalling);
+        capabilities.insert(BotCapability::ToolInput);
         Self { capabilities }
     }
 

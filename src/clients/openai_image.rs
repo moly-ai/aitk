@@ -218,8 +218,7 @@ impl BotClient for OpenAiImageClient {
         let headers = inner.headers;
 
         Box::pin(async move {
-            let capabilities = BotCapabilities::new()
-                .with_capabilities([BotCapability::TextInput, BotCapability::AttachmentOutput]);
+            let capabilities = BotCapabilities::new().with_capabilities([BotCapability::TextInput]);
 
             crate::utils::openai::get_bots(&client, &base_url, headers, &capabilities)
                 .await
