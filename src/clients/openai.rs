@@ -155,18 +155,22 @@ struct IncomingMessage {
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_null_default")]
     pub content: Content,
-    /// The reasoning text separated from the main content if provided.
-    /// - Aggregators like OpenRouter may expose this as `reasoning`.
-    /// - Other providers like Silicon Flow may use `reasoning_content` instead
-    ///   for **some** models.
-    /// - Local distilled DeepSeek R1 models may NOT use this, and instead return
-    ///   reasoning as part of the `content` under a `<think>` tag.
+    /// The reasoning text from providers that use `reasoning` (e.g. OpenRouter).
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_null_default")]
-    #[serde(alias = "reasoning_content")]
     pub reasoning: String,
-    /// Tool calls made by the assistant
+    /// The reasoning text from providers that use `reasoning_content`
+    /// (e.g. SiliconFlow, NVIDIA NIM). Some providers send both fields
+    /// with identical content, so these must be separate to avoid
+    /// serde's "duplicate field" error.
     #[serde(default)]
+    #[serde(deserialize_with = "deserialize_null_default")]
+    pub reasoning_content: String,
+    /// Tool calls made by the assistant.
+    /// Some providers (e.g. NVIDIA NIM) may set this to `null` instead of
+    /// omitting it, so a null-safe deserializer is needed.
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_null_default")]
     pub tool_calls: Vec<OpenAiToolCall>,
 }
 /// A message being sent to the completions endpoint.
@@ -651,7 +655,14 @@ impl BotClient for OpenAiClient {
 
                     if reasoning.is_empty() {
                         // Append reasoning delta if reasoning was not part of the content.
-                        content.reasoning.push_str(&choice.delta.reasoning);
+                        // Some providers use `reasoning`, others use `reasoning_content`,
+                        // and some (NVIDIA NIM) send both with identical content.
+                        let delta_reasoning = if !choice.delta.reasoning.is_empty() {
+                            &choice.delta.reasoning
+                        } else {
+                            &choice.delta.reasoning_content
+                        };
+                        content.reasoning.push_str(delta_reasoning);
                     } else {
                         // Otherwise, set the reasoning to what we extracted from the full text.
                         content.reasoning = reasoning.to_string();
