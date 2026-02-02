@@ -491,6 +491,9 @@ impl ChatController {
                     None => {}
                 }
 
+                if self.state.messages.is_empty() {
+                    return false;
+                }
                 self.dispatch_mutation(VecMutation::update_last_with(
                     &self.state.messages,
                     |message| {
