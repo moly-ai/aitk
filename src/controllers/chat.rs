@@ -492,7 +492,7 @@ impl ChatController {
                 }
 
                 if self.state.messages.is_empty() {
-                    return false;
+                    return true;
                 }
                 self.dispatch_mutation(VecMutation::update_last_with(
                     &self.state.messages,
