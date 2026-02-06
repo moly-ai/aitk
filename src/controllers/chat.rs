@@ -448,7 +448,10 @@ impl ChatController {
 
                 c.dispatch_mutation(VecMutation::Set(bots.unwrap_or_default()));
 
-                let messages = errors.into_iter().map(|e| Message::app_error(e)).collect();
+                let messages: Vec<_> = errors
+                    .into_iter()
+                    .map(Message::from_client_error)
+                    .collect();
                 c.dispatch_mutation(VecMutation::Extend(messages));
             });
         }));
@@ -506,7 +509,10 @@ impl ChatController {
                 false
             }
             Err(errors) => {
-                let messages = errors.into_iter().map(|e| Message::app_error(e)).collect();
+                let messages: Vec<_> = errors
+                    .into_iter()
+                    .map(Message::from_client_error)
+                    .collect();
                 self.dispatch_mutation(VecMutation::Extend(messages));
 
                 true

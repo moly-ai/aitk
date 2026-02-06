@@ -10,7 +10,7 @@ use std::{
 
 use crate::utils::asynchronous::{BoxPlatformSendFuture, BoxPlatformSendStream};
 use crate::utils::{serde::deserialize_null_default, sse::parse_sse};
-use crate::{protocol::*, utils::http::enrich_http_error};
+use crate::protocol::*;
 
 /// The content of a [`ContentPart::ImageUrl`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -568,14 +568,16 @@ impl BotClient for OpenAiClient {
                     } else {
                         let status_code = response.status();
                         let body = response.text().await.unwrap();
-                        let original = format!("Request failed with status {}", status_code);
-                        let enriched = enrich_http_error(status_code, &original, Some(&body));
+                        let message = format!(
+                            "Request failed with status {}",
+                            status_code,
+                        );
 
                         log::error!("Error sending request to {}: status {}", url, status_code);
                         yield ClientError::new(
                             ClientErrorKind::Response,
-                            enriched,
-                        ).into();
+                            message,
+                        ).with_details(body).into();
                         return;
                     }
                 }
