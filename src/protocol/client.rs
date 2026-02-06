@@ -43,6 +43,7 @@ pub struct ClientError {
     kind: ClientErrorKind,
     message: String,
     source: Option<Arc<dyn Error + Send + Sync + 'static>>,
+    details: Option<String>,
 }
 
 impl fmt::Display for ClientError {
@@ -79,6 +80,7 @@ impl ClientError {
             kind,
             message,
             source: None,
+            details: None,
         }
     }
 
@@ -91,7 +93,14 @@ impl ClientError {
             kind,
             message,
             source: source.map(|s| Arc::new(s) as _),
+            details: None,
         }
+    }
+
+    /// Attach raw technical details (e.g. HTTP response body) to this error.
+    pub fn with_details(mut self, details: String) -> Self {
+        self.details = Some(details);
+        self
     }
 
     /// Error kind accessor.
@@ -102,6 +111,16 @@ impl ClientError {
     /// Error message accessor.
     pub fn message(&self) -> &str {
         self.message.as_str()
+    }
+
+    /// Raw technical details, if any (e.g. HTTP response body).
+    pub fn details(&self) -> Option<&str> {
+        self.details.as_deref()
+    }
+
+    /// Take the raw technical details out, leaving `None` in place.
+    pub fn take_details(&mut self) -> Option<String> {
+        self.details.take()
     }
 }
 

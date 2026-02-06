@@ -177,6 +177,21 @@ impl Message {
         }
     }
 
+    /// Construct an app error message from a [`ClientError`], preserving
+    /// structured details (e.g. HTTP response body) in [`MessageContent::data`].
+    pub fn from_client_error(mut error: ClientError) -> Self {
+        let details = error.take_details();
+        Message {
+            from: EntityId::App,
+            content: MessageContent {
+                text: format!("Error: {}", error),
+                data: details,
+                ..MessageContent::default()
+            },
+            ..Default::default()
+        }
+    }
+
     /// Set the content of a message as a whole (also updates metadata).
     pub fn set_content(&mut self, content: MessageContent) {
         self.update_content(|c| {
