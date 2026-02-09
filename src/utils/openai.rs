@@ -19,7 +19,6 @@ pub(crate) struct Models {
     pub data: Vec<Model>,
 }
 
-#[cfg(feature = "api-clients")]
 pub(crate) async fn get_models(
     client: &reqwest::Client,
     url: &str,
@@ -70,7 +69,6 @@ pub(crate) async fn get_models(
     Ok(models.data)
 }
 
-#[cfg(feature = "api-clients")]
 pub(crate) async fn get_bots(
     client: &reqwest::Client,
     url: &str,
