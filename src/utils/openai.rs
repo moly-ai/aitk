@@ -1,4 +1,4 @@
-//! Shared definitions and utilities for the OpenAI spec.
+//! Shared definitions and utilities for the OpenAI spec (and extensions).
 
 use crate::protocol::*;
 use serde::Deserialize;
@@ -7,6 +7,10 @@ use serde::Deserialize;
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub(crate) struct Model {
     pub id: String,
+    /// OpenRouter human readable name.
+    pub name: Option<String>,
+    /// Anthropic human readable name.
+    pub display_name: Option<String>,
 }
 
 /// Response from the models endpoint.
@@ -77,12 +81,21 @@ pub(crate) async fn get_bots(
 
     let bots: Vec<Bot> = models
         .iter()
-        .map(|m| Bot {
-            id: BotId::new(&m.id),
-            name: m.id.clone(),
-            avatar: EntityAvatar::from_first_grapheme(&m.id.to_uppercase())
-                .unwrap_or_else(|| EntityAvatar::Text("?".into())),
-            capabilities: capabilities.clone(),
+        .map(|m| {
+            let name = m
+                .name
+                .as_ref()
+                .or(m.display_name.as_ref())
+                .cloned()
+                .unwrap_or_else(|| m.id.clone());
+
+            Bot {
+                id: BotId::new(&m.id),
+                name,
+                avatar: EntityAvatar::from_first_grapheme(&m.id.to_uppercase())
+                    .unwrap_or_else(|| EntityAvatar::Text("?".into())),
+                capabilities: capabilities.clone(),
+            }
         })
         .collect();
 
