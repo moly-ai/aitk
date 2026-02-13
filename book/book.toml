@@ -5,7 +5,6 @@ title = "AITK"
 
 [output.html]
 default-theme = "light"
-preferred-dark-theme = "light"
 additional-css = ["./mdbook-admonish.css"]
 
 [output.html.playground]
