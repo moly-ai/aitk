@@ -21,3 +21,4 @@
 # Advanced
 
 - [Implementing a Custom Client](advanced/custom-client.md)
+- [Crate Documentation](crate-docs.md)
