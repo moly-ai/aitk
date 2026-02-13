@@ -12,7 +12,7 @@ reasoning extraction, and tool calls.
 use aitk::prelude::*;
 
 let mut client = OpenAiClient::new("https://api.openai.com/v1".into());
-client.set_key("your-api-key".into());
+client.set_key("your-api-key").unwrap();
 ```
 
 The URL can point to any OpenAI-compatible endpoint: OpenAI, Azure, Ollama, LM Studio,

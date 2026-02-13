@@ -21,7 +21,7 @@ route requests:
 
 ```rust
 let mut openai = OpenAiClient::new("https://api.openai.com/v1".into());
-openai.set_key("your-openai-key".into());
+openai.set_key("your-openai-key").unwrap();
 
 let mut ollama = OpenAiClient::new("http://localhost:11434/v1".into());
 
@@ -95,7 +95,7 @@ use futures::StreamExt;
 let router = RouterClient::new();
 
 let mut openai = OpenAiClient::new("https://api.openai.com/v1".into());
-openai.set_key("sk-...".into());
+openai.set_key("sk-...").unwrap();
 router.insert_client("openai", Box::new(openai));
 
 let mut ollama = OpenAiClient::new("http://localhost:11434/v1".into());

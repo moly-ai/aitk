@@ -12,7 +12,7 @@ message and receive a `MessageContent` back, this time with an image `Attachment
 use aitk::prelude::*;
 
 let mut client = OpenAiImageClient::new("https://api.openai.com/v1".into());
-client.set_key("your-api-key".into());
+client.set_key("your-api-key").unwrap();
 ```
 
 ## Generating an image

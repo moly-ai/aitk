@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 
 // 1. Create and configure a client.
 let mut client = OpenAiClient::new("https://api.openai.com/v1".into());
-client.set_key("your-api-key".into());
+client.set_key("your-api-key").unwrap();
 
 // 2. Build the controller.
 let controller: Arc<Mutex<ChatController>> = ChatController::builder()

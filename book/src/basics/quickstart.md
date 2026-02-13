@@ -8,12 +8,12 @@ aitk is not yet published on crates.io. Add it as a Git dependency:
 
 ```toml
 [dependencies]
-aitk = { git = "https://github.com/moly-ai/aitk.git", features = ["api-clients", "async-rt"] }
+aitk = { git = "https://github.com/moly-ai/aitk.git", features = ["api-clients"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 futures = "0.3"
 ```
 
-The `api-clients` feature enables the built-in HTTP clients. The `async-rt` feature gives you
-the cross-platform `spawn()` utility used in the example below.
+The `api-clients` feature enables the built-in HTTP clients.
 
 ## Hello World
 
@@ -21,13 +21,13 @@ This example sends a message to an OpenAI-compatible API and prints the streamed
 
 ```rust
 use aitk::prelude::*;
-use aitk::utils::asynchronous::spawn;
 use futures::StreamExt;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // Create and configure a client.
     let mut client = OpenAiClient::new("https://api.openai.com/v1".into());
-    client.set_key("your-api-key".into());
+    client.set_key("your-api-key").unwrap();
 
     // Build the request.
     let bot_id = BotId::new("gpt-4.1-nano");
@@ -41,15 +41,13 @@ fn main() {
     }];
 
     // Send and stream the response.
-    spawn(async move {
-        let mut stream = client.send(&bot_id, &messages, &[]);
-        while let Some(result) = stream.next().await {
-            if let Some(content) = result.into_value() {
-                print!("{}", content.text);
-            }
+    let mut stream = client.send(&bot_id, &messages, &[]);
+    while let Some(result) = stream.next().await {
+        if let Some(content) = result.into_value() {
+            print!("{}", content.text);
         }
-        println!();
-    });
+    }
+    println!();
 }
 ```
 
@@ -70,12 +68,12 @@ fn main() {
 
 5. **`result.into_value()`** extracts the `MessageContent` from the result.
 
-```admonish tip
-The `spawn()` function from `aitk::utils::asynchronous` (available with the `async-rt` feature)
-is a convenience that makes it easy to write code that works on both native and WASM without
-thinking about the underlying runtime. It is not mandatory -- you are free to use `tokio`
-or any other async runtime directly. On native, `spawn()` will reuse the existing `tokio`
-runtime if one is available, or create one otherwise.
+```admonish tip title="Cross-platform async"
+For cross-platform code that needs to run on both native and WASM, aitk provides the
+`spawn()` utility (available with the `async-rt` feature) which abstracts over different
+runtimes. On native it uses `tokio`, on WASM it uses `wasm-bindgen-futures`. However,
+`spawn()` is **not** a blocking executor -- it's only for spawning background tasks.
+For entry points in native applications, use `#[tokio::main]` or your runtime's equivalent.
 ```
 
 ## Next Steps

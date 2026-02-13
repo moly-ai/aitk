@@ -13,7 +13,7 @@ use aitk::prelude::*;
 
 // Set up clients.
 let mut openai = OpenAiClient::new("https://api.openai.com/v1".into());
-openai.set_key("sk-...".into());
+openai.set_key("sk-...").unwrap();
 
 let ollama = OpenAiClient::new("http://localhost:11434/v1".into());
 
