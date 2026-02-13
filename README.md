@@ -16,3 +16,7 @@
 ## Documentation
 
 For detailed documentation, please visit the [GitHub page](https://moly-ai.github.io/aitk).
+
+## Examples
+
+Check out the `examples/` directory for practical usage examples.
