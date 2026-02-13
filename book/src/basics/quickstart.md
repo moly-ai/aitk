@@ -71,14 +71,6 @@ async fn main() {
 
 5. **`result.into_value()`** extracts the `MessageContent` from the result.
 
-```admonish tip title="Cross-platform async"
-For cross-platform code that needs to run on both native and WASM, aitk provides the
-`spawn()` utility (available with the `async-rt` feature) which abstracts over different
-runtimes. On native it uses `tokio`, on WASM it uses `wasm-bindgen-futures`. However,
-`spawn()` is **not** a blocking executor -- it's only for spawning background tasks.
-For entry points in native applications, use `#[tokio::main]` or your runtime's equivalent.
-```
-
 ## Next Steps
 
 - Learn about the [built-in clients](../clients/openai.md) in detail.
