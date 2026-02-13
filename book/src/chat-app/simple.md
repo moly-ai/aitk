@@ -76,9 +76,11 @@ let controller = ChatController::builder()
     .build_arc();                  // Produces Arc<Mutex<ChatController>>
 ```
 
+```admonish tip title="About the spawner"
 The controller needs a spawner to run async tasks. `with_basic_spawner()` uses the
 built-in cross-platform spawner from the `async-rt` feature, but you can provide any
 custom spawner that implements the `Spawner` trait if you prefer a different runtime.
+```
 
 You can also create the controller manually and configure it step by step:
 
