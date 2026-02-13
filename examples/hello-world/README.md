@@ -1,4 +1,4 @@
-## Basic Chat
+## Hello World
 
 Sends a single message to an OpenAI-compatible API and prints the streamed response.
 
