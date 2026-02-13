@@ -45,9 +45,11 @@ let messages = vec![Message {
 }];
 
 let mut stream = client.send(&bot_id, &messages, &[]);
+let mut last_content = MessageContent::default();
+
 while let Some(result) = stream.next().await {
     match result.into_result() {
-        Ok(content) => print!("{}", content.text),
+        Ok(content) => last_content = content,
         Err(errors) => {
             for e in errors {
                 eprintln!("Error: {}", e);
@@ -55,6 +57,8 @@ while let Some(result) = stream.next().await {
         }
     }
 }
+
+println!("{}", last_content.text);
 ```
 
 ### Multi-turn conversations

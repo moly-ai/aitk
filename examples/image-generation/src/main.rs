@@ -21,29 +21,30 @@ async fn main() {
     }];
 
     let mut stream = client.send(&bot_id, &messages, &[]);
+    let mut last_content = MessageContent::default();
+    
     while let Some(result) = stream.next().await {
         match result.into_result() {
-            Ok(content) => {
-                for attachment in &content.attachments {
-                    println!("Generated image: {}", attachment.name);
-
-                    // Read the raw bytes and write to disk.
-                    match attachment.read().await {
-                        Ok(bytes) => {
-                            let path = &attachment.name;
-                            std::fs::write(path, &*bytes)
-                                .expect("Failed to write image file");
-                            println!("Saved to {path}");
-                        }
-                        Err(e) => eprintln!("Failed to read attachment: {e}"),
-                    }
-                }
-            }
+            Ok(content) => last_content = content,
             Err(errors) => {
                 for e in errors {
                     eprintln!("Error: {e}");
                 }
             }
+        }
+    }
+
+    // Save all attachments from the final result.
+    for attachment in &last_content.attachments {
+        println!("Generated image: {}", attachment.name);
+
+        match attachment.read().await {
+            Ok(bytes) => {
+                let path = &attachment.name;
+                std::fs::write(path, &*bytes).expect("Failed to write image file");
+                println!("Saved to {path}");
+            }
+            Err(e) => eprintln!("Failed to read attachment: {e}"),
         }
     }
 }

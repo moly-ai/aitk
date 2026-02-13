@@ -124,9 +124,13 @@ let messages = vec![Message {
 }];
 
 let mut stream = router_clone.send(&bot_id, &messages, &[]);
+let mut last_content = MessageContent::default();
+
 while let Some(result) = stream.next().await {
     if let Some(content) = result.into_value() {
-        print!("{}", content.text);
+        last_content = content;
     }
 }
+
+println!("{}", last_content.text);
 ```

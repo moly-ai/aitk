@@ -42,12 +42,15 @@ async fn main() {
 
     // Send and stream the response.
     let mut stream = client.send(&bot_id, &messages, &[]);
+    let mut last_content = MessageContent::default();
+    
     while let Some(result) = stream.next().await {
         if let Some(content) = result.into_value() {
-            print!("{}", content.text);
+            last_content = content;
         }
     }
-    println!();
+    
+    println!("{}", last_content.text);
 }
 ```
 
