@@ -1,8 +1,11 @@
 # Simple Usage
 
-If you are building a chat application, `ChatController` provides reusable business logic
-for managing conversation state, streaming responses, and loading models -- without tying
-you to any UI framework.
+```admonish note
+`ChatController` is entirely optional. You can build chat applications using the clients
+directly -- the controller is simply a convenience for the common case. It provides
+reusable business logic for managing conversation state, streaming responses, and loading
+models, without tying you to any UI framework.
+```
 
 This chapter shows how to use it with a single model you already know the ID of.
 
@@ -68,10 +71,14 @@ After calling `dispatch_task(ChatTask::Send)`, the controller:
 ```rust
 let controller = ChatController::builder()
     .with_client(client)           // Set the BotClient
-    .with_basic_spawner()          // Use the built-in cross-platform spawner
+    .with_basic_spawner()          // Cross-platform spawner (async-rt feature)
     .with_plugin_append(plugin)    // Register plugins
     .build_arc();                  // Produces Arc<Mutex<ChatController>>
 ```
+
+The controller needs a spawner to run async tasks. `with_basic_spawner()` uses the
+built-in cross-platform spawner from the `async-rt` feature, but you can provide any
+custom spawner that implements the `Spawner` trait if you prefer a different runtime.
 
 You can also create the controller manually and configure it step by step:
 
@@ -93,10 +100,9 @@ contains:
 | Field | Type | Description |
 |---|---|---|
 | `messages` | `Vec<Message>` | The full conversation history. |
-| `is_streaming` | `bool` | Whether the model is currently streaming a response. |
 | `bots` | `Vec<Bot>` | Models loaded from the client (see [Advanced Usage](advanced.md)). |
 | `load_status` | `Status` | Status of the model loading operation. |
-| `bot_id` | `Option<BotId>` | The currently selected model. |
+| `bot_id` | `Option<BotId>` | The model used when dispatching the `Send` task. |
 
 ## Mutations
 
@@ -190,7 +196,6 @@ impl ChatControllerPlugin for CliPlugin {
 | `on_state_ready(state, mutations)` | After all batched mutations are applied. Use this for UI updates. |
 | `on_state_mutation(mutation, state)` | For each individual mutation, with the *pre-mutation* state. Useful for fine-grained change tracking. |
 | `on_task(task) -> ChatControl` | Before a task executes. Return `ChatControl::Stop` to cancel it. |
-| `on_upgrade(upgrade, bot_id)` | When a realtime upgrade is received. |
 
 ## Reading state in a UI loop
 
@@ -208,8 +213,10 @@ for message in &state.messages {
         _ => {}
     }
 }
+```
 
-if state.is_streaming {
-    render_loading_indicator();
-}
+```admonish tip
+If your UI framework allows it, prefer locking the controller once per render pass to
+read all the state you need, rather than locking and unlocking repeatedly. This avoids
+unnecessary contention and ensures a consistent view of the state for the entire frame.
 ```

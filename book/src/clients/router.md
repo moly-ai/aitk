@@ -2,7 +2,7 @@
 
 `RouterClient` aggregates multiple `BotClient` implementations into a single client.
 It routes requests to the correct sub-client based on a prefix in the `BotId`, letting
-you work with models from different providers through one unified interface.
+you work with models from different clients through one unified interface.
 
 No additional feature flag is required -- `RouterClient` is always available.
 
@@ -101,7 +101,7 @@ router.insert_client("openai", Box::new(openai));
 let mut ollama = OpenAiClient::new("http://localhost:11434/v1".into());
 router.insert_client("ollama", Box::new(ollama));
 
-// List all models across both providers.
+// List all models across both clients.
 let mut router_clone = router.clone();
 let result = router_clone.bots().await;
 if let Some(bots) = result.value() {
@@ -112,7 +112,7 @@ if let Some(bots) = result.value() {
     }
 }
 
-// Send to a specific provider's model.
+// Send to a specific client's model.
 let bot_id = BotId::new("openai/gpt-4.1-nano");
 let messages = vec![Message {
     from: EntityId::User,

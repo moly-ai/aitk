@@ -49,17 +49,3 @@ while let Some(result) = stream.next().await {
 ```
 
 The client sends the audio as a multipart form upload with the model ID and the file.
-
-## Listing available models
-
-```rust
-let result = client.bots().await;
-if let Some(bots) = result.value() {
-    for bot in bots {
-        println!("{}", bot.name);
-    }
-}
-```
-
-STT models are reported with `AttachmentInput` capability, reflecting that they expect
-an audio file rather than text input.

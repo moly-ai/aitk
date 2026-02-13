@@ -20,7 +20,7 @@ OpenRouter, and others.
 
 ### Custom headers
 
-Some providers require additional headers. Use `set_header` for these cases:
+Some services require additional headers. Use `set_header` for these cases:
 
 ```rust
 client.set_header("x-custom-header", "value").unwrap();
@@ -180,19 +180,10 @@ while let Some(result) = stream.next().await {
 }
 ```
 
-### Disabling tools
-
-If you want to temporarily prevent the client from sending tool definitions to the API
-(even if you pass a non-empty tools slice), you can toggle this:
-
-```rust
-client.set_tools_enabled(false);
-```
-
 ## Listing available models
 
 All clients implement `bots()` which fetches the list of available models from the
-provider:
+configured endpoint:
 
 ```rust
 let result = client.bots().await;

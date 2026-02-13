@@ -48,16 +48,8 @@ while let Some(result) = stream.next().await {
 The client handles both base64 and URL responses transparently. In both cases the image
 bytes are available through the `Attachment` API.
 
-## Listing available models
-
-```rust
-let result = client.bots().await;
-if let Some(bots) = result.value() {
-    for bot in bots {
-        println!("{}", bot.name);
-    }
-}
+```admonish note
+`Attachment` includes convenience methods like `save()` that interact directly with the
+operating system (e.g. opening a save dialog on desktop, triggering a download on web).
+These are provided for pragmatism but may change in a future version.
 ```
-
-Image models are reported with `TextInput` capability only, since they accept a text
-prompt but not attachments or tools.

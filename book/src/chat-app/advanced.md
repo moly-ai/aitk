@@ -1,17 +1,17 @@
 # Advanced Usage
 
 This chapter builds on the [simple usage](simple.md) guide and covers using
-`ChatController` with a `RouterClient` for multiple providers and dynamic model loading.
+`ChatController` with a `RouterClient` for multiple clients and dynamic model loading.
 
 ## Router + ChatController
 
 Instead of hardcoding a single client, you can use `RouterClient` to aggregate
-multiple providers and let the user pick a model at runtime.
+multiple clients and let the user pick a model at runtime.
 
 ```rust
 use aitk::prelude::*;
 
-// Set up providers.
+// Set up clients.
 let mut openai = OpenAiClient::new("https://api.openai.com/v1".into());
 openai.set_key("sk-...".into());
 

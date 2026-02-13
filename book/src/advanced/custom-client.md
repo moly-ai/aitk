@@ -6,7 +6,7 @@ implementations is coming soon.
 ```
 
 All built-in clients implement the `BotClient` trait. You can implement it yourself to
-support providers that don't follow the OpenAI-compatible API, or to add custom logic
+support services that don't follow the OpenAI-compatible API, or to add custom logic
 around AI interactions.
 
 ## The BotClient trait
