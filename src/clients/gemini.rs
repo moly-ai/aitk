@@ -14,7 +14,6 @@ use url::Url;
 struct GeminiClientInner {
     url: String,
     headers: HeaderMap,
-    api_key: Option<String>,
     client: reqwest::Client,
 }
 
@@ -34,7 +33,6 @@ impl GeminiClient {
         let inner = GeminiClientInner {
             url,
             headers: HeaderMap::new(),
-            api_key: None,
             client: crate::utils::http::default_client(),
         };
         Self(Arc::new(RwLock::new(inner)))
@@ -54,7 +52,6 @@ impl GeminiClient {
 
     /// Sets the Gemini API key used for request authentication.
     pub fn set_key(&mut self, key: &str) -> Result<(), &'static str> {
-        self.0.write().unwrap().api_key = Some(key.to_string());
         self.set_header("x-goog-api-key", key)
     }
 }
@@ -129,7 +126,6 @@ fn normalize_model_id(id: &str) -> &str {
 fn build_endpoint_url(
     base_url: &str,
     suffix: &str,
-    api_key: Option<&str>,
     extra_query: &[(&str, &str)],
 ) -> Result<String, ClientError> {
     let mut url = Url::parse(base_url).map_err(|error| {
@@ -150,26 +146,22 @@ fn build_endpoint_url(
         for (key, value) in extra_query {
             query.append_pair(key, value);
         }
-        if let Some(api_key) = api_key {
-            query.append_pair("key", api_key);
-        }
     }
 
     Ok(url.to_string())
 }
 
-fn build_models_url(base_url: &str, api_key: Option<&str>) -> Result<String, ClientError> {
-    build_endpoint_url(base_url, "models", api_key, &[])
+fn build_models_url(base_url: &str) -> Result<String, ClientError> {
+    build_endpoint_url(base_url, "models", &[])
 }
 
 fn build_stream_url(
     base_url: &str,
     bot_id: &BotId,
-    api_key: Option<&str>,
 ) -> Result<String, ClientError> {
     let model_id = normalize_model_id(bot_id.id());
     let suffix = format!("models/{model_id}:streamGenerateContent");
-    build_endpoint_url(base_url, &suffix, api_key, &[("alt", "sse")])
+    build_endpoint_url(base_url, &suffix, &[("alt", "sse")])
 }
 
 fn supports_generate_content(model: &GeminiModel) -> bool {
@@ -309,7 +301,7 @@ impl BotClient for GeminiClient {
         let inner = self.0.read().unwrap().clone();
 
         Box::pin(async move {
-            let url = match build_models_url(&inner.url, inner.api_key.as_deref()) {
+            let url = match build_models_url(&inner.url) {
                 Ok(url) => url,
                 Err(error) => return error.into(),
             };
@@ -366,7 +358,7 @@ impl BotClient for GeminiClient {
         let messages = messages.to_vec();
 
         let stream = stream! {
-            let url = match build_stream_url(&inner.url, &bot_id, inner.api_key.as_deref()) {
+            let url = match build_stream_url(&inner.url, &bot_id) {
                 Ok(url) => url,
                 Err(error) => {
                     yield error.into();
@@ -481,16 +473,14 @@ mod tests {
     }
 
     #[test]
-    fn models_url_appends_key_and_preserves_existing_query() {
+    fn models_url_preserves_existing_query() {
         let url = build_models_url(
             "https://generativelanguage.googleapis.com/v1beta?alt=sse",
-            Some("test-key"),
         )
         .expect("failed to build models url");
 
         assert!(url.contains("/models?"));
         assert!(url.contains("alt=sse"));
-        assert!(url.contains("key=test-key"));
     }
 
     #[test]
@@ -498,13 +488,11 @@ mod tests {
         let url = build_stream_url(
             "https://generativelanguage.googleapis.com/v1beta",
             &BotId::new("models/gemini-2.0-flash"),
-            Some("test-key"),
         )
         .expect("failed to build stream url");
 
         assert!(url.contains("/models/gemini-2.0-flash:streamGenerateContent"));
         assert!(url.contains("alt=sse"));
-        assert!(url.contains("key=test-key"));
     }
 
     #[test]
