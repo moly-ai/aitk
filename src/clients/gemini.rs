@@ -60,6 +60,8 @@ impl GeminiClient {
 struct GeminiModelsResponse {
     #[serde(default)]
     models: Vec<GeminiModel>,
+    #[serde(rename = "nextPageToken")]
+    next_page_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -151,8 +153,16 @@ fn build_endpoint_url(
     Ok(url.to_string())
 }
 
-fn build_models_url(base_url: &str) -> Result<String, ClientError> {
-    build_endpoint_url(base_url, "models", &[])
+fn build_models_url(
+    base_url: &str,
+    page_token: Option<&str>,
+) -> Result<String, ClientError> {
+    match page_token {
+        Some(token) => {
+            build_endpoint_url(base_url, "models", &[("pageToken", token)])
+        }
+        None => build_endpoint_url(base_url, "models", &[]),
+    }
 }
 
 fn build_stream_url(
@@ -310,52 +320,126 @@ fn parse_stream_text(payload: &str) -> Result<String, ClientError> {
 
 impl BotClient for GeminiClient {
     fn bots(&mut self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
-        let inner = self.0.read().unwrap().clone();
+        let inner = self
+            .0
+            .read()
+            .expect("gemini client lock poisoned")
+            .clone();
 
         Box::pin(async move {
-            let url = match build_models_url(&inner.url) {
-                Ok(url) => url,
-                Err(error) => return error.into(),
-            };
+            let mut all_bots = Vec::new();
+            let mut page_token: Option<String> = None;
 
-            let response = match inner.client.get(&url).headers(inner.headers).send().await {
-                Ok(response) => response,
-                Err(error) => {
-                    return ClientError::new_with_source(
-                        ClientErrorKind::Network,
+            loop {
+                let url = match build_models_url(
+                    &inner.url,
+                    page_token.as_deref(),
+                ) {
+                    Ok(url) => url,
+                    Err(error) => return error.into(),
+                };
+
+                let response = match inner
+                    .client
+                    .get(&url)
+                    .headers(inner.headers.clone())
+                    .send()
+                    .await
+                {
+                    Ok(response) => response,
+                    Err(error) => {
+                        return ClientError::new_with_source(
+                            ClientErrorKind::Network,
+                            format!(
+                                "Could not send request to {url}. \
+                                 Verify your connection and key."
+                            ),
+                            Some(error),
+                        )
+                        .into();
+                    }
+                };
+
+                if !response.status().is_success() {
+                    let status = response.status();
+                    let details =
+                        response.text().await.unwrap_or_default();
+                    return ClientError::new(
+                        ClientErrorKind::Response,
                         format!(
-                            "Could not send request to {url}. Verify your connection and key."
+                            "Gemini models request failed \
+                             with status {status}."
                         ),
-                        Some(error),
                     )
+                    .with_details(details)
                     .into();
                 }
-            };
 
-            if !response.status().is_success() {
-                let status = response.status();
-                let details = response.text().await.unwrap_or_default();
-                return ClientError::new(
-                    ClientErrorKind::Response,
-                    format!("Gemini models request failed with status {status}."),
-                )
-                .with_details(details)
-                .into();
+                let payload = match response.text().await {
+                    Ok(text) => text,
+                    Err(error) => {
+                        return ClientError::new_with_source(
+                            ClientErrorKind::Format,
+                            format!(
+                                "Could not read Gemini models \
+                                 response from {url}."
+                            ),
+                            Some(error),
+                        )
+                        .into();
+                    }
+                };
+
+                let parsed: GeminiModelsResponse =
+                    match serde_json::from_str(&payload) {
+                        Ok(r) => r,
+                        Err(error) => {
+                            return ClientError::new_with_source(
+                                ClientErrorKind::Format,
+                                "Could not parse Gemini models \
+                                 response."
+                                    .to_string(),
+                                Some(error),
+                            )
+                            .into();
+                        }
+                    };
+
+                let bots = parsed
+                    .models
+                    .iter()
+                    .filter(|m| supports_generate_content(m))
+                    .map(|model| {
+                        let id = normalize_model_id(&model.name);
+                        let name = model
+                            .display_name
+                            .clone()
+                            .unwrap_or_else(|| id.to_string());
+                        Bot {
+                            id: BotId::new(id),
+                            name,
+                            avatar: EntityAvatar::from_first_grapheme(
+                                &model.name.to_uppercase(),
+                            )
+                            .unwrap_or_else(|| {
+                                EntityAvatar::Text("?".into())
+                            }),
+                            capabilities: derive_capabilities(model),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                all_bots.extend(bots);
+
+                match parsed.next_page_token {
+                    Some(token) if !token.is_empty() => {
+                        page_token = Some(token);
+                    }
+                    _ => break,
+                }
             }
 
-            let payload = match response.text().await {
-                Ok(text) => text,
-                Err(error) => {
-                    return ClientError::new_with_source(
-                        ClientErrorKind::Format,
-                        format!("Could not read Gemini models response from {url}."),
-                        Some(error),
-                    )
-                    .into();
-                }
-            };
-
-            parse_models_response(&payload).into()
+            ClientResult::new_ok(all_bots)
         })
     }
 
@@ -488,11 +572,23 @@ mod tests {
     fn models_url_preserves_existing_query() {
         let url = build_models_url(
             "https://generativelanguage.googleapis.com/v1beta?alt=sse",
+            None,
         )
         .expect("failed to build models url");
 
         assert!(url.contains("/models?"));
         assert!(url.contains("alt=sse"));
+    }
+
+    #[test]
+    fn models_url_includes_page_token() {
+        let url = build_models_url(
+            "https://generativelanguage.googleapis.com/v1beta",
+            Some("abc123"),
+        )
+        .expect("failed to build models url");
+
+        assert!(url.contains("pageToken=abc123"));
     }
 
     #[test]
