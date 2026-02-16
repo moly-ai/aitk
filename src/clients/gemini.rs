@@ -1,4 +1,3 @@
-use crate::protocol::Tool;
 use crate::protocol::*;
 use crate::utils::asynchronous::{BoxPlatformSendFuture, BoxPlatformSendStream};
 use crate::utils::sse::parse_sse;
