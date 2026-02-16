@@ -172,6 +172,18 @@ fn supports_generate_content(model: &GeminiModel) -> bool {
             .any(|method| method == "generateContent")
 }
 
+fn derive_capabilities(model: &GeminiModel) -> BotCapabilities {
+    let mut caps = vec![BotCapability::TextInput];
+    if model
+        .supported_generation_methods
+        .iter()
+        .any(|m| m == "generateContent")
+    {
+        caps.push(BotCapability::ToolInput);
+    }
+    BotCapabilities::new().with_capabilities(caps)
+}
+
 fn parse_models_response(payload: &str) -> Result<Vec<Bot>, ClientError> {
     let response: GeminiModelsResponse = serde_json::from_str(payload).map_err(|error| {
         ClientError::new_with_source(
@@ -197,7 +209,7 @@ fn parse_models_response(payload: &str) -> Result<Vec<Bot>, ClientError> {
                 name,
                 avatar: EntityAvatar::from_first_grapheme(&model.name.to_uppercase())
                     .unwrap_or_else(|| EntityAvatar::Text("?".into())),
-                capabilities: BotCapabilities::new().with_capabilities([BotCapability::TextInput]),
+                capabilities: derive_capabilities(model),
             }
         })
         .collect();
@@ -533,6 +545,30 @@ mod tests {
             request.system_instruction.expect("missing system instruction").parts[0].text,
             "You are helpful."
         );
+    }
+
+    #[test]
+    fn parse_models_response_maps_capabilities_from_generation_methods() {
+        let payload = r#"
+        {
+          "models": [
+            {
+              "name": "models/gemini-2.0-flash",
+              "supportedGenerationMethods": ["generateContent"]
+            },
+            {
+              "name": "models/text-embedding-004",
+              "supportedGenerationMethods": ["embedContent"]
+            }
+          ]
+        }"#;
+
+        let bots = parse_models_response(payload).expect("failed to parse");
+        assert_eq!(bots.len(), 1, "embedding model should be filtered out");
+
+        let bot = &bots[0];
+        assert!(bot.capabilities.has_capability(&BotCapability::TextInput));
+        assert!(bot.capabilities.has_capability(&BotCapability::ToolInput));
     }
 
     #[test]
