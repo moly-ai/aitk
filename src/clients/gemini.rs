@@ -44,7 +44,7 @@ impl GeminiClient {
         let header_value = value.parse().map_err(|_| "Invalid header value")?;
         self.0
             .write()
-            .unwrap()
+            .expect("gemini client lock poisoned")
             .headers
             .insert(header_name, header_value);
         Ok(())
@@ -194,6 +194,7 @@ fn derive_capabilities(model: &GeminiModel) -> BotCapabilities {
     BotCapabilities::new().with_capabilities(caps)
 }
 
+#[cfg(test)]
 fn parse_models_response(payload: &str) -> Result<Vec<Bot>, ClientError> {
     let response: GeminiModelsResponse = serde_json::from_str(payload).map_err(|error| {
         ClientError::new_with_source(
@@ -449,7 +450,9 @@ impl BotClient for GeminiClient {
         messages: &[Message],
         _tools: &[Tool],
     ) -> BoxPlatformSendStream<'static, ClientResult<MessageContent>> {
-        let inner = self.0.read().unwrap().clone();
+        // TODO: Gemini supports function calling — convert `_tools` to
+        // Gemini `tools` / `function_declarations` and include in request.
+        let inner = self.0.read().expect("gemini client lock poisoned").clone();
         let bot_id = bot_id.clone();
         let messages = messages.to_vec();
 
@@ -501,7 +504,6 @@ impl BotClient for GeminiClient {
                 return;
             }
 
-            let mut content = MessageContent::default();
             let mut full_text = String::new();
             let events = parse_sse(response.bytes_stream());
 
@@ -531,8 +533,9 @@ impl BotClient for GeminiClient {
                 }
 
                 full_text.push_str(&chunk);
+                let mut content = MessageContent::default();
                 content.text = full_text.clone();
-                yield ClientResult::new_ok(content.clone());
+                yield ClientResult::new_ok(content);
             }
         };
 
