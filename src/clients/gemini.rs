@@ -1,3 +1,5 @@
+//! Native Gemini API client implementation.
+
 use crate::protocol::*;
 use crate::utils::asynchronous::{BoxPlatformSendFuture, BoxPlatformSendStream};
 use crate::utils::sse::parse_sse;
@@ -187,8 +189,28 @@ fn supports_generate_content(model: &GeminiModel) -> bool {
             .any(|method| method == "generateContent")
 }
 
-fn derive_capabilities(_model: &GeminiModel) -> BotCapabilities {
+fn derive_capabilities() -> BotCapabilities {
     BotCapabilities::new().with_capabilities([BotCapability::TextInput])
+}
+
+fn gemini_model_to_bot(model: &GeminiModel) -> Option<Bot> {
+    if !supports_generate_content(model) {
+        return None;
+    }
+
+    let normalized_id = normalize_model_id(&model.name);
+    let name = model
+        .display_name
+        .clone()
+        .unwrap_or_else(|| normalized_id.to_string());
+
+    Some(Bot {
+        id: BotId::new(normalized_id),
+        name,
+        avatar: EntityAvatar::from_first_grapheme(&model.name.to_uppercase())
+            .unwrap_or_else(|| EntityAvatar::Text("?".into())),
+        capabilities: derive_capabilities(),
+    })
 }
 
 #[cfg(test)]
@@ -201,27 +223,7 @@ fn parse_models_response(payload: &str) -> Result<Vec<Bot>, ClientError> {
         )
     })?;
 
-    let bots = response
-        .models
-        .iter()
-        .filter(|model| supports_generate_content(model))
-        .map(|model| {
-            let normalized_id = normalize_model_id(&model.name);
-            let name = model
-                .display_name
-                .clone()
-                .unwrap_or_else(|| normalized_id.to_string());
-
-            Bot {
-                id: BotId::new(normalized_id),
-                name,
-                avatar: EntityAvatar::from_first_grapheme(&model.name.to_uppercase())
-                    .unwrap_or_else(|| EntityAvatar::Text("?".into())),
-                capabilities: derive_capabilities(model),
-            }
-        })
-        .collect();
-
+    let bots = response.models.iter().filter_map(gemini_model_to_bot).collect();
     Ok(bots)
 }
 
@@ -406,25 +408,7 @@ impl BotClient for GeminiClient {
                 let bots = parsed
                     .models
                     .iter()
-                    .filter(|m| supports_generate_content(m))
-                    .map(|model| {
-                        let id = normalize_model_id(&model.name);
-                        let name = model
-                            .display_name
-                            .clone()
-                            .unwrap_or_else(|| id.to_string());
-                        Bot {
-                            id: BotId::new(id),
-                            name,
-                            avatar: EntityAvatar::from_first_grapheme(
-                                &model.name.to_uppercase(),
-                            )
-                            .unwrap_or_else(|| {
-                                EntityAvatar::Text("?".into())
-                            }),
-                            capabilities: derive_capabilities(model),
-                        }
-                    })
+                    .filter_map(gemini_model_to_bot)
                     .collect::<Vec<_>>();
 
                 all_bots.extend(bots);
@@ -530,8 +514,10 @@ impl BotClient for GeminiClient {
                 }
 
                 full_text.push_str(&chunk);
-                let mut content = MessageContent::default();
-                content.text = full_text.clone();
+                let content = MessageContent {
+                    text: full_text.clone(),
+                    ..Default::default()
+                };
                 yield ClientResult::new_ok(content);
             }
         };
