@@ -169,8 +169,13 @@ fn build_stream_url(
     base_url: &str,
     bot_id: &BotId,
 ) -> Result<String, ClientError> {
-    let model_id = normalize_model_id(bot_id.id());
-    let suffix = format!("models/{model_id}:streamGenerateContent");
+    let model_id = bot_id.id();
+    let model_path = if model_id.contains('/') {
+        model_id.to_string()
+    } else {
+        format!("models/{}", normalize_model_id(model_id))
+    };
+    let suffix = format!("{model_path}:streamGenerateContent");
     build_endpoint_url(base_url, &suffix, &[("alt", "sse")])
 }
 
@@ -182,16 +187,8 @@ fn supports_generate_content(model: &GeminiModel) -> bool {
             .any(|method| method == "generateContent")
 }
 
-fn derive_capabilities(model: &GeminiModel) -> BotCapabilities {
-    let mut caps = vec![BotCapability::TextInput];
-    if model
-        .supported_generation_methods
-        .iter()
-        .any(|m| m == "generateContent")
-    {
-        caps.push(BotCapability::ToolInput);
-    }
-    BotCapabilities::new().with_capabilities(caps)
+fn derive_capabilities(_model: &GeminiModel) -> BotCapabilities {
+    BotCapabilities::new().with_capabilities([BotCapability::TextInput])
 }
 
 #[cfg(test)]
@@ -607,6 +604,18 @@ mod tests {
     }
 
     #[test]
+    fn stream_url_keeps_qualified_resource_path() {
+        let url = build_stream_url(
+            "https://generativelanguage.googleapis.com/v1beta",
+            &BotId::new("tunedModels/my-tuned-model"),
+        )
+        .expect("failed to build stream url");
+
+        assert!(url.contains("/tunedModels/my-tuned-model:streamGenerateContent"));
+        assert!(!url.contains("/models/tunedModels/my-tuned-model:streamGenerateContent"));
+    }
+
+    #[test]
     fn build_generate_request_maps_system_user_and_model_roles() {
         let messages = vec![
             Message {
@@ -667,7 +676,7 @@ mod tests {
 
         let bot = &bots[0];
         assert!(bot.capabilities.has_capability(&BotCapability::TextInput));
-        assert!(bot.capabilities.has_capability(&BotCapability::ToolInput));
+        assert!(!bot.capabilities.has_capability(&BotCapability::ToolInput));
     }
 
     #[test]
