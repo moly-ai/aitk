@@ -81,16 +81,19 @@ struct GeminiModel {
 #[derive(Debug, Serialize)]
 struct GeminiGenerateRequest {
     contents: Vec<GeminiContent>,
-    #[serde(rename = "system_instruction")]
+    #[serde(rename = "systemInstruction")]
     #[serde(skip_serializing_if = "Option::is_none")]
     system_instruction: Option<GeminiSystemInstruction>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<GeminiToolDeclarations>>,
+    #[serde(rename = "toolConfig")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_config: Option<GeminiToolConfig>,
 }
 
 #[derive(Debug, Serialize)]
 struct GeminiToolDeclarations {
-    #[serde(rename = "function_declarations")]
+    #[serde(rename = "functionDeclarations")]
     function_declarations: Vec<GeminiFunctionDeclaration>,
 }
 
@@ -100,6 +103,20 @@ struct GeminiFunctionDeclaration {
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
     parameters: Value,
+}
+
+#[derive(Debug, Serialize)]
+struct GeminiToolConfig {
+    #[serde(rename = "functionCallingConfig")]
+    function_calling_config: GeminiFunctionCallingConfig,
+}
+
+#[derive(Debug, Serialize)]
+struct GeminiFunctionCallingConfig {
+    mode: String,
+    #[serde(rename = "allowedFunctionNames")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    allowed_function_names: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -125,6 +142,9 @@ enum GeminiOutgoingPart {
     FunctionCall {
         #[serde(rename = "functionCall")]
         function_call: GeminiFunctionCall,
+        #[serde(rename = "thoughtSignature")]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thought_signature: Option<String>,
     },
     FunctionResponse {
         #[serde(rename = "functionResponse")]
@@ -169,12 +189,23 @@ struct GeminiStreamPart {
     text: String,
     #[serde(rename = "functionCall")]
     function_call: Option<GeminiFunctionCall>,
+    #[serde(rename = "thoughtSignature")]
+    thought_signature: Option<String>,
 }
 
 #[derive(Debug, Default)]
 struct GeminiStreamDelta {
     text: String,
-    function_calls: Vec<GeminiFunctionCall>,
+    function_calls: Vec<GeminiFunctionCallDelta>,
+}
+
+const TOOL_CALL_SIGNATURES_KEY: &str = "gemini_tool_call_thought_signatures";
+
+#[derive(Debug)]
+struct GeminiFunctionCallDelta {
+    name: String,
+    args: Value,
+    thought_signature: Option<String>,
 }
 
 fn normalize_model_id(id: &str) -> &str {
@@ -306,6 +337,27 @@ fn as_gemini_tools(tools: &[Tool]) -> Option<Vec<GeminiToolDeclarations>> {
     }])
 }
 
+fn as_gemini_tool_config(tools: &[Tool], messages: &[Message]) -> Option<GeminiToolConfig> {
+    if tools.is_empty() {
+        return None;
+    }
+
+    let has_tool_results = messages.iter().any(|message| {
+        matches!(message.from, EntityId::Tool) && !message.content.tool_results.is_empty()
+    });
+
+    Some(GeminiToolConfig {
+        function_calling_config: GeminiFunctionCallingConfig {
+            mode: if has_tool_results { "AUTO" } else { "ANY" }.to_string(),
+            allowed_function_names: if has_tool_results {
+                Vec::new()
+            } else {
+                tools.iter().map(|tool| tool.name.clone()).collect()
+            },
+        },
+    })
+}
+
 fn collect_tool_call_names(messages: &[Message]) -> HashMap<String, String> {
     let mut names = HashMap::new();
     for message in messages {
@@ -337,6 +389,7 @@ fn parse_tool_result_payload(result: &ToolResult) -> Value {
 
 fn as_bot_parts(message: &Message) -> Vec<GeminiOutgoingPart> {
     let mut parts = Vec::new();
+    let thought_signatures = parse_tool_call_thought_signatures(message.content.data.as_deref());
 
     if !message.content.text.is_empty() {
         parts.push(GeminiOutgoingPart::Text(GeminiTextPart {
@@ -350,6 +403,7 @@ fn as_bot_parts(message: &Message) -> Vec<GeminiOutgoingPart> {
                 name: call.name.clone(),
                 args: Value::Object(call.arguments.clone()),
             },
+            thought_signature: thought_signatures.get(&call.id).cloned(),
         });
     }
 
@@ -459,6 +513,7 @@ fn build_generate_request(
         contents,
         system_instruction,
         tools: as_gemini_tools(tools),
+        tool_config: as_gemini_tool_config(tools, messages),
     })
 }
 
@@ -481,7 +536,11 @@ fn parse_stream_delta(payload: &str) -> Result<GeminiStreamDelta, ClientError> {
                 }
                 if let Some(function_call) = part.function_call {
                     if !function_call.name.is_empty() {
-                        delta.function_calls.push(function_call);
+                        delta.function_calls.push(GeminiFunctionCallDelta {
+                            name: function_call.name,
+                            args: function_call.args,
+                            thought_signature: part.thought_signature,
+                        });
                     }
                 }
             }
@@ -506,6 +565,52 @@ fn function_call_args_to_map(args: Value) -> Map<String, Value> {
             arguments
         }
     }
+}
+
+fn encode_tool_call_thought_signatures(signatures: &HashMap<String, String>) -> Option<String> {
+    if signatures.is_empty() {
+        return None;
+    }
+
+    let signatures_object = signatures
+        .iter()
+        .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+        .collect::<Map<String, Value>>();
+
+    let mut root = Map::new();
+    root.insert(
+        TOOL_CALL_SIGNATURES_KEY.to_string(),
+        Value::Object(signatures_object),
+    );
+
+    serde_json::to_string(&Value::Object(root)).ok()
+}
+
+fn parse_tool_call_thought_signatures(data: Option<&str>) -> HashMap<String, String> {
+    let Some(data) = data else {
+        return HashMap::new();
+    };
+
+    let Ok(value) = serde_json::from_str::<Value>(data) else {
+        return HashMap::new();
+    };
+
+    let Some(signatures) = value
+        .as_object()
+        .and_then(|root| root.get(TOOL_CALL_SIGNATURES_KEY))
+        .and_then(Value::as_object)
+    else {
+        return HashMap::new();
+    };
+
+    signatures
+        .iter()
+        .filter_map(|(id, signature)| {
+            signature
+                .as_str()
+                .map(|signature| (id.clone(), signature.to_string()))
+        })
+        .collect()
 }
 
 impl BotClient for GeminiClient {
@@ -668,6 +773,7 @@ impl BotClient for GeminiClient {
             let mut full_text = String::new();
             let mut tool_call_ids_by_index: HashMap<usize, String> = HashMap::new();
             let mut tool_calls_by_index: BTreeMap<usize, ToolCall> = BTreeMap::new();
+            let mut tool_call_signatures_by_id: HashMap<String, String> = HashMap::new();
             let mut next_tool_call_id = 0usize;
             let events = parse_sse(response.bytes_stream());
 
@@ -713,17 +819,22 @@ impl BotClient for GeminiClient {
                     tool_calls_by_index.insert(
                         index,
                         ToolCall {
-                            id: call_id,
+                            id: call_id.clone(),
                             name: function_call.name,
                             arguments: function_call_args_to_map(function_call.args),
                             ..Default::default()
                         },
                     );
+
+                    if let Some(signature) = function_call.thought_signature {
+                        tool_call_signatures_by_id.insert(call_id, signature);
+                    }
                 }
 
                 let content = MessageContent {
                     text: full_text.clone(),
                     tool_calls: tool_calls_by_index.values().cloned().collect(),
+                    data: encode_tool_call_thought_signatures(&tool_call_signatures_by_id),
                     ..Default::default()
                 };
                 yield ClientResult::new_ok(content);
@@ -846,10 +957,21 @@ mod tests {
         assert_eq!(
             request
                 .system_instruction
+                .as_ref()
                 .expect("missing system instruction")
                 .parts[0]
                 .text,
             "You are helpful."
+        );
+
+        let value = serde_json::to_value(request).expect("failed to serialize request");
+        assert_eq!(
+            value["systemInstruction"]["parts"][0]["text"],
+            "You are helpful."
+        );
+        assert!(
+            value["system_instruction"].is_null(),
+            "snake_case field should not be present"
         );
     }
 
@@ -920,13 +1042,22 @@ mod tests {
 
         let request = build_generate_request(&messages, &tools).expect("failed to build request");
         let value = serde_json::to_value(request).expect("failed to serialize request");
-        let declarations = value["tools"][0]["function_declarations"]
+        let declarations = value["tools"][0]["functionDeclarations"]
             .as_array()
             .expect("missing function_declarations");
 
         assert_eq!(declarations.len(), 1);
         assert_eq!(declarations[0]["name"], "get_weather");
         assert_eq!(declarations[0]["parameters"]["type"], "object");
+        assert!(
+            value["tools"][0]["function_declarations"].is_null(),
+            "snake_case field should not be present"
+        );
+        assert_eq!(value["toolConfig"]["functionCallingConfig"]["mode"], "ANY");
+        assert_eq!(
+            value["toolConfig"]["functionCallingConfig"]["allowedFunctionNames"][0],
+            "get_weather"
+        );
     }
 
     #[test]
@@ -981,6 +1112,34 @@ mod tests {
     }
 
     #[test]
+    fn build_generate_request_sets_tool_mode_auto_after_tool_results() {
+        let messages = vec![Message {
+            from: EntityId::Tool,
+            content: MessageContent {
+                tool_results: vec![ToolResult {
+                    tool_call_id: "call-1".to_string(),
+                    content: r#"{"ok":true}"#.to_string(),
+                    is_error: false,
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        }];
+
+        let tools = vec![Tool {
+            name: "get_weather".to_string(),
+            description: Some("Get weather".to_string()),
+            input_schema: std::sync::Arc::new(
+                serde_json::from_str(r#"{"type":"object"}"#).expect("invalid schema"),
+            ),
+        }];
+
+        let request = build_generate_request(&messages, &tools).expect("failed to build request");
+        let value = serde_json::to_value(request).expect("failed to serialize request");
+        assert_eq!(value["toolConfig"]["functionCallingConfig"]["mode"], "AUTO");
+    }
+
+    #[test]
     fn parse_stream_delta_extracts_text_and_function_calls() {
         let payload = r#"
         {
@@ -989,7 +1148,7 @@ mod tests {
               "content": {
                 "parts": [
                   {"text":"Checking..."},
-                  {"functionCall":{"name":"get_weather","args":{"city":"Tokyo"}}}
+                  {"functionCall":{"name":"get_weather","args":{"city":"Tokyo"}},"thoughtSignature":"sig-123"}
                 ]
               }
             }
@@ -1001,5 +1160,34 @@ mod tests {
         assert_eq!(delta.function_calls.len(), 1);
         assert_eq!(delta.function_calls[0].name, "get_weather");
         assert_eq!(delta.function_calls[0].args["city"], "Tokyo");
+        assert_eq!(
+            delta.function_calls[0].thought_signature.as_deref(),
+            Some("sig-123")
+        );
+    }
+
+    #[test]
+    fn as_bot_parts_includes_thought_signature_from_data() {
+        let message = Message {
+            from: EntityId::Bot(BotId::new("gemini-3-flash-preview")),
+            content: MessageContent {
+                tool_calls: vec![ToolCall {
+                    id: "call-1".to_string(),
+                    name: "get_weather".to_string(),
+                    arguments: serde_json::from_str(r#"{"location":"Montevideo"}"#)
+                        .expect("invalid args"),
+                    ..Default::default()
+                }],
+                data: Some(
+                    r#"{"gemini_tool_call_thought_signatures":{"call-1":"sig-abc"}}"#.to_string(),
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let parts = as_bot_parts(&message);
+        let value = serde_json::to_value(parts).expect("failed to serialize parts");
+        assert_eq!(value[0]["thoughtSignature"], "sig-abc");
     }
 }
