@@ -8,7 +8,7 @@ use reqwest::header::{HeaderMap, HeaderName};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     str::FromStr,
     sync::{Arc, RwLock},
 };
@@ -154,6 +154,10 @@ enum GeminiOutgoingPart {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GeminiFunctionCall {
+    // Gemini may provide a stable server-side call id for function call/result correlation.
+    // We preserve it when present and use it as the primary identity key in stream assembly.
+    #[serde(default)]
+    id: Option<String>,
     #[serde(default)]
     name: String,
     #[serde(default)]
@@ -203,6 +207,7 @@ const TOOL_CALL_SIGNATURES_KEY: &str = "gemini_tool_call_thought_signatures";
 
 #[derive(Debug)]
 struct GeminiFunctionCallDelta {
+    id: Option<String>,
     name: String,
     args: Value,
     thought_signature: Option<String>,
@@ -337,23 +342,15 @@ fn as_gemini_tools(tools: &[Tool]) -> Option<Vec<GeminiToolDeclarations>> {
     }])
 }
 
-fn as_gemini_tool_config(tools: &[Tool], messages: &[Message]) -> Option<GeminiToolConfig> {
+fn as_gemini_tool_config(tools: &[Tool]) -> Option<GeminiToolConfig> {
     if tools.is_empty() {
         return None;
     }
 
-    let has_tool_results = messages.iter().any(|message| {
-        matches!(message.from, EntityId::Tool) && !message.content.tool_results.is_empty()
-    });
-
     Some(GeminiToolConfig {
         function_calling_config: GeminiFunctionCallingConfig {
-            mode: if has_tool_results { "AUTO" } else { "ANY" }.to_string(),
-            allowed_function_names: if has_tool_results {
-                Vec::new()
-            } else {
-                tools.iter().map(|tool| tool.name.clone()).collect()
-            },
+            mode: "AUTO".to_string(),
+            allowed_function_names: Vec::new(),
         },
     })
 }
@@ -400,6 +397,9 @@ fn as_bot_parts(message: &Message) -> Vec<GeminiOutgoingPart> {
     for call in &message.content.tool_calls {
         parts.push(GeminiOutgoingPart::FunctionCall {
             function_call: GeminiFunctionCall {
+                // Keep the call id when replaying model tool calls back to Gemini.
+                // This preserves protocol-level correlation with later function responses.
+                id: Some(call.id.clone()),
                 name: call.name.clone(),
                 args: Value::Object(call.arguments.clone()),
             },
@@ -513,7 +513,7 @@ fn build_generate_request(
         contents,
         system_instruction,
         tools: as_gemini_tools(tools),
-        tool_config: as_gemini_tool_config(tools, messages),
+        tool_config: as_gemini_tool_config(tools),
     })
 }
 
@@ -537,6 +537,7 @@ fn parse_stream_delta(payload: &str) -> Result<GeminiStreamDelta, ClientError> {
                 if let Some(function_call) = part.function_call {
                     if !function_call.name.is_empty() {
                         delta.function_calls.push(GeminiFunctionCallDelta {
+                            id: function_call.id,
                             name: function_call.name,
                             args: function_call.args,
                             thought_signature: part.thought_signature,
@@ -611,6 +612,107 @@ fn parse_tool_call_thought_signatures(data: Option<&str>) -> HashMap<String, Str
                 .map(|signature| (id.clone(), signature.to_string()))
         })
         .collect()
+}
+
+#[derive(Default)]
+struct GeminiStreamToolCallState {
+    by_stream_index: HashMap<usize, StreamToolCallSlot>,
+    order: Vec<String>,
+    calls_by_id: HashMap<String, ToolCall>,
+    thought_signatures_by_id: HashMap<String, String>,
+    next_id: usize,
+}
+
+struct StreamToolCallSlot {
+    // Fallback signature used only when protocol id is absent.
+    signature: String,
+    id: String,
+}
+
+impl GeminiStreamToolCallState {
+    fn apply_delta(&mut self, function_calls: Vec<GeminiFunctionCallDelta>) {
+        for (stream_index, function_call) in function_calls.into_iter().enumerate() {
+            let signature = stream_tool_call_signature(&function_call.name, &function_call.args);
+            // Design decision:
+            // 1) Protocol ID first: if Gemini returns `functionCall.id`, we must preserve it
+            //    end-to-end so follow-up `functionResponse` can correlate with the exact server call.
+            // 2) Fallback only when `id` is absent: some responses may omit it, so we keep a local
+            //    stable key based on stream position + call signature to avoid ID collisions.
+            let call_id = if let Some(protocol_id) = function_call.id.clone() {
+                self.by_stream_index.insert(
+                    stream_index,
+                    StreamToolCallSlot {
+                        signature,
+                        id: protocol_id.clone(),
+                    },
+                );
+                self.ensure_ordered_id(&protocol_id);
+                protocol_id
+            } else {
+                self.call_id_from_fallback(stream_index, signature)
+            };
+
+            self.calls_by_id.insert(
+                call_id.clone(),
+                ToolCall {
+                    id: call_id.clone(),
+                    name: function_call.name,
+                    arguments: function_call_args_to_map(function_call.args),
+                    ..Default::default()
+                },
+            );
+
+            if let Some(thought_signature) = function_call.thought_signature {
+                self.thought_signatures_by_id
+                    .insert(call_id, thought_signature);
+            }
+        }
+    }
+
+    fn call_id_from_fallback(&mut self, stream_index: usize, signature: String) -> String {
+        // Fallback policy:
+        // - same stream index + same signature => same logical call (continue updating),
+        // - otherwise allocate a new local id to prevent cross-call collisions.
+        match self.by_stream_index.get(&stream_index) {
+            Some(slot) if slot.signature == signature => slot.id.clone(),
+            _ => {
+                let id = format!("gemini-call-{}", self.next_id);
+                self.next_id += 1;
+                self.by_stream_index.insert(
+                    stream_index,
+                    StreamToolCallSlot {
+                        signature,
+                        id: id.clone(),
+                    },
+                );
+                self.order.push(id.clone());
+                id
+            }
+        }
+    }
+
+    fn ensure_ordered_id(&mut self, id: &str) {
+        if self.calls_by_id.contains_key(id) {
+            return;
+        }
+        self.order.push(id.to_string());
+    }
+
+    fn tool_calls(&self) -> Vec<ToolCall> {
+        self.order
+            .iter()
+            .filter_map(|id| self.calls_by_id.get(id).cloned())
+            .collect()
+    }
+
+    fn encoded_thought_signatures(&self) -> Option<String> {
+        encode_tool_call_thought_signatures(&self.thought_signatures_by_id)
+    }
+}
+
+fn stream_tool_call_signature(name: &str, args: &Value) -> String {
+    let serialized_args = serde_json::to_string(args).unwrap_or_default();
+    format!("{name}:{serialized_args}")
 }
 
 impl BotClient for GeminiClient {
@@ -771,10 +873,7 @@ impl BotClient for GeminiClient {
             }
 
             let mut full_text = String::new();
-            let mut tool_call_ids_by_index: HashMap<usize, String> = HashMap::new();
-            let mut tool_calls_by_index: BTreeMap<usize, ToolCall> = BTreeMap::new();
-            let mut tool_call_signatures_by_id: HashMap<String, String> = HashMap::new();
-            let mut next_tool_call_id = 0usize;
+            let mut stream_tool_call_state = GeminiStreamToolCallState::default();
             let events = parse_sse(response.bytes_stream());
 
             for await event in events {
@@ -806,35 +905,12 @@ impl BotClient for GeminiClient {
                     full_text.push_str(&delta.text);
                 }
 
-                for (index, function_call) in delta.function_calls.into_iter().enumerate() {
-                    let call_id = tool_call_ids_by_index
-                        .entry(index)
-                        .or_insert_with(|| {
-                            let call_id = format!("gemini-call-{next_tool_call_id}");
-                            next_tool_call_id += 1;
-                            call_id
-                        })
-                        .clone();
-
-                    tool_calls_by_index.insert(
-                        index,
-                        ToolCall {
-                            id: call_id.clone(),
-                            name: function_call.name,
-                            arguments: function_call_args_to_map(function_call.args),
-                            ..Default::default()
-                        },
-                    );
-
-                    if let Some(signature) = function_call.thought_signature {
-                        tool_call_signatures_by_id.insert(call_id, signature);
-                    }
-                }
+                stream_tool_call_state.apply_delta(delta.function_calls);
 
                 let content = MessageContent {
                     text: full_text.clone(),
-                    tool_calls: tool_calls_by_index.values().cloned().collect(),
-                    data: encode_tool_call_thought_signatures(&tool_call_signatures_by_id),
+                    tool_calls: stream_tool_call_state.tool_calls(),
+                    data: stream_tool_call_state.encoded_thought_signatures(),
                     ..Default::default()
                 };
                 yield ClientResult::new_ok(content);
@@ -1053,10 +1129,10 @@ mod tests {
             value["tools"][0]["function_declarations"].is_null(),
             "snake_case field should not be present"
         );
-        assert_eq!(value["toolConfig"]["functionCallingConfig"]["mode"], "ANY");
-        assert_eq!(
-            value["toolConfig"]["functionCallingConfig"]["allowedFunctionNames"][0],
-            "get_weather"
+        assert_eq!(value["toolConfig"]["functionCallingConfig"]["mode"], "AUTO");
+        assert!(
+            value["toolConfig"]["functionCallingConfig"]["allowedFunctionNames"].is_null(),
+            "allowedFunctionNames should be omitted in AUTO mode"
         );
     }
 
@@ -1158,12 +1234,99 @@ mod tests {
         let delta = parse_stream_delta(payload).expect("failed to parse stream payload");
         assert_eq!(delta.text, "Checking...");
         assert_eq!(delta.function_calls.len(), 1);
+        assert_eq!(delta.function_calls[0].id, None);
         assert_eq!(delta.function_calls[0].name, "get_weather");
         assert_eq!(delta.function_calls[0].args["city"], "Tokyo");
         assert_eq!(
             delta.function_calls[0].thought_signature.as_deref(),
             Some("sig-123")
         );
+    }
+
+    #[test]
+    fn parse_stream_delta_extracts_protocol_function_call_id() {
+        let payload = r#"
+        {
+          "candidates": [
+            {
+              "content": {
+                "parts": [
+                  {
+                    "functionCall": {
+                      "id": "protocol-call-42",
+                      "name": "get_weather",
+                      "args": {"city":"Tokyo"}
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }"#;
+
+        let delta = parse_stream_delta(payload).expect("failed to parse stream payload");
+        assert_eq!(delta.function_calls.len(), 1);
+        assert_eq!(
+            delta.function_calls[0].id.as_deref(),
+            Some("protocol-call-42")
+        );
+    }
+
+    #[test]
+    fn stream_tool_call_state_preserves_distinct_calls_across_chunk_index_restarts() {
+        let mut state = GeminiStreamToolCallState::default();
+
+        state.apply_delta(vec![GeminiFunctionCallDelta {
+            id: None,
+            name: "first_call".to_string(),
+            args: serde_json::json!({"city":"Tokyo"}),
+            thought_signature: None,
+        }]);
+
+        state.apply_delta(vec![GeminiFunctionCallDelta {
+            id: None,
+            name: "second_call".to_string(),
+            args: serde_json::json!({"city":"Seoul"}),
+            thought_signature: None,
+        }]);
+
+        let calls = state.tool_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "first_call");
+        assert_eq!(calls[1].name, "second_call");
+        assert_ne!(calls[0].id, calls[1].id);
+    }
+
+    #[test]
+    fn stream_tool_call_state_prefers_protocol_function_call_id() {
+        let payload = r#"
+        {
+          "candidates": [
+            {
+              "content": {
+                "parts": [
+                  {
+                    "functionCall": {
+                      "id": "protocol-call-42",
+                      "name": "get_weather",
+                      "args": {"city":"Tokyo"}
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }"#;
+
+        let delta = parse_stream_delta(payload).expect("failed to parse stream payload");
+
+        let mut state = GeminiStreamToolCallState::default();
+        state.apply_delta(delta.function_calls);
+
+        let calls = state.tool_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "protocol-call-42");
+        assert_eq!(calls[0].name, "get_weather");
     }
 
     #[test]

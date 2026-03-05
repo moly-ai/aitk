@@ -3,8 +3,7 @@
 use async_stream::stream;
 use futures::Stream;
 
-pub(crate) const EVENT_TERMINATOR: &'static [u8] = b"\n\n";
-pub(crate) const EVENT_TERMINATOR_CRLF: &'static [u8] = b"\r\n\r\n";
+const EVENT_TERMINATOR: &[u8] = b"\n\n";
 
 /// Split from the last SSE event terminator.
 ///
@@ -16,35 +15,18 @@ pub(crate) const EVENT_TERMINATOR_CRLF: &'static [u8] = b"\r\n\r\n";
 /// so you should keep this on the buffer until completed.
 ///
 /// Returns `None` if no terminator is found.
-pub(crate) fn rsplit_once_terminator(buffer: &[u8]) -> Option<(&[u8], &[u8])> {
-    fn find_last(buffer: &[u8], term: &[u8]) -> Option<usize> {
-        buffer
-            .windows(term.len())
-            .enumerate()
-            .rev()
-            .find(|(_, w)| *w == term)
-            .map(|(pos, _)| pos)
-    }
-
-    let lf = find_last(buffer, EVENT_TERMINATOR).map(|pos| (pos, EVENT_TERMINATOR.len()));
-    let crlf =
-        find_last(buffer, EVENT_TERMINATOR_CRLF).map(|pos| (pos, EVENT_TERMINATOR_CRLF.len()));
-
-    let (pos, len) = match (lf, crlf) {
-        (Some(lf), Some(crlf)) => {
-            if lf.0 >= crlf.0 {
-                lf
-            } else {
-                crlf
-            }
-        }
-        (Some(lf), None) => lf,
-        (None, Some(crlf)) => crlf,
-        (None, None) => return None,
-    };
+///
+/// This splitter handles LF-only delimiters. Normalize CRLF before calling it.
+fn rsplit_once_terminator(buffer: &[u8]) -> Option<(&[u8], &[u8])> {
+    let pos = buffer
+        .windows(EVENT_TERMINATOR.len())
+        .enumerate()
+        .rev()
+        .find(|(_, w)| *w == EVENT_TERMINATOR)
+        .map(|(pos, _)| pos)?;
 
     let (before, after_with_terminator) = buffer.split_at(pos);
-    let after = &after_with_terminator[len..];
+    let after = &after_with_terminator[EVENT_TERMINATOR.len()..];
     Some((before, after))
 }
 
@@ -100,6 +82,7 @@ where
             let chunk = chunk.as_ref();
 
             buffer.extend_from_slice(chunk);
+            buffer.retain(|&b| b != b'\r');
 
             let Some((completed_messages, incomplete_message)) =
                 rsplit_once_terminator(&buffer)
@@ -108,8 +91,7 @@ where
             };
 
             // Silently drop any invalid utf8 bytes from the completed messages.
-            let completed_messages = String::from_utf8_lossy(completed_messages)
-                .replace("\r\n", "\n");
+            let completed_messages = String::from_utf8_lossy(completed_messages);
 
             let messages = completed_messages
                 .split(event_terminator_str)
@@ -134,14 +116,6 @@ mod tests {
         let buffer = b"data: 1\n\ndata: 2\n\ndata: incomplete mes";
         let (completed, incomplete) = rsplit_once_terminator(buffer).unwrap();
         assert_eq!(completed, b"data: 1\n\ndata: 2");
-        assert_eq!(incomplete, b"data: incomplete mes");
-    }
-
-    #[test]
-    fn test_rsplit_once_terminator_crlf() {
-        let buffer = b"data: 1\r\n\r\ndata: 2\r\n\r\ndata: incomplete mes";
-        let (completed, incomplete) = rsplit_once_terminator(buffer).unwrap();
-        assert_eq!(completed, b"data: 1\r\n\r\ndata: 2");
         assert_eq!(incomplete, b"data: incomplete mes");
     }
 
