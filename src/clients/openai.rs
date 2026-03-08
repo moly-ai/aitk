@@ -8,9 +8,9 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use crate::protocol::*;
 use crate::utils::asynchronous::{BoxPlatformSendFuture, BoxPlatformSendStream};
 use crate::utils::{serde::deserialize_null_default, sse::parse_sse};
-use crate::protocol::*;
 
 /// The content of a [`ContentPart::ImageUrl`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -408,12 +408,138 @@ struct Completion {
     pub citations: Vec<String>,
 }
 
+/// Controls how tools are selected when calling the OpenAI Chat Completions API.
+#[derive(Clone, Debug, PartialEq)]
+pub enum OpenAiToolChoice {
+    /// The model must not call tools.
+    None,
+    /// Let the model decide whether to call tools.
+    Auto,
+    /// The model must call one or more tools.
+    Required,
+    /// Force a specific tool by function name.
+    Function { name: String },
+}
+
+impl OpenAiToolChoice {
+    fn as_json(&self) -> serde_json::Value {
+        match self {
+            OpenAiToolChoice::None => serde_json::Value::String("none".to_string()),
+            OpenAiToolChoice::Auto => serde_json::Value::String("auto".to_string()),
+            OpenAiToolChoice::Required => serde_json::Value::String("required".to_string()),
+            OpenAiToolChoice::Function { name } => serde_json::json!({
+                "type": "function",
+                "function": { "name": name }
+            }),
+        }
+    }
+}
+
+/// JSON schema definition used by [`OpenAiResponseFormat::JsonSchema`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenAiJsonSchemaResponseFormat {
+    /// Schema identifier expected by OpenAI-compatible APIs.
+    pub name: String,
+    /// JSON Schema document.
+    pub schema: serde_json::Value,
+    /// Whether the model output should strictly follow the schema.
+    pub strict: bool,
+}
+
+/// Controls structured output behavior for the Chat Completions API.
+#[derive(Clone, Debug, PartialEq)]
+pub enum OpenAiResponseFormat {
+    /// Default text output.
+    Text,
+    /// JSON object output mode.
+    JsonObject,
+    /// Structured output using JSON Schema.
+    JsonSchema(OpenAiJsonSchemaResponseFormat),
+}
+
+impl OpenAiResponseFormat {
+    /// Creates a JSON schema response format payload.
+    pub fn json_schema(name: String, schema: serde_json::Value, strict: bool) -> Self {
+        OpenAiResponseFormat::JsonSchema(OpenAiJsonSchemaResponseFormat {
+            name,
+            schema,
+            strict,
+        })
+    }
+
+    fn as_json(&self) -> serde_json::Value {
+        match self {
+            OpenAiResponseFormat::Text => serde_json::json!({ "type": "text" }),
+            OpenAiResponseFormat::JsonObject => serde_json::json!({ "type": "json_object" }),
+            OpenAiResponseFormat::JsonSchema(json_schema) => serde_json::json!({
+                "type": "json_schema",
+                "json_schema": {
+                    "name": json_schema.name,
+                    "schema": json_schema.schema,
+                    "strict": json_schema.strict,
+                }
+            }),
+        }
+    }
+}
+
+/// Configurable OpenAI Chat Completions request options.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OpenAiRequestOptions {
+    /// Optional `tool_choice` field sent to the API.
+    pub tool_choice: Option<OpenAiToolChoice>,
+    /// Optional `response_format` field sent to the API.
+    pub response_format: Option<OpenAiResponseFormat>,
+}
+
+impl OpenAiRequestOptions {
+    /// Returns options with `tool_choice` configured.
+    pub fn with_tool_choice(mut self, tool_choice: OpenAiToolChoice) -> Self {
+        self.tool_choice = Some(tool_choice);
+        self
+    }
+
+    /// Returns options with `response_format` configured.
+    pub fn with_response_format(mut self, response_format: OpenAiResponseFormat) -> Self {
+        self.response_format = Some(response_format);
+        self
+    }
+}
+
+fn build_chat_completions_request_body(
+    model: &str,
+    messages: &[OutgoingMessage],
+    tools: &[FunctionTool],
+    options: &OpenAiRequestOptions,
+) -> serde_json::Value {
+    let mut json = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "stream": true
+    });
+
+    if !tools.is_empty() {
+        json["tools"] = serde_json::json!(tools);
+    }
+
+    if let Some(tool_choice) = &options.tool_choice {
+        json["tool_choice"] = tool_choice.as_json();
+    }
+
+    if let Some(response_format) = &options.response_format {
+        json["response_format"] = response_format.as_json();
+    }
+
+    json
+}
+
 #[derive(Clone, Debug)]
 struct OpenAiClientInner {
     url: String,
     headers: HeaderMap,
     client: reqwest::Client,
     tools_enabled: bool,
+    request_options: OpenAiRequestOptions,
 }
 
 /// A client capable of interacting with Moly Server and other OpenAI-compatible APIs.
@@ -443,6 +569,7 @@ impl OpenAiClient {
             headers,
             client,
             tools_enabled: true, // Default to enabled for backward compatibility
+            request_options: OpenAiRequestOptions::default(),
         }
         .into()
     }
@@ -477,6 +604,21 @@ impl OpenAiClient {
 
     pub fn set_tools_enabled(&mut self, enabled: bool) {
         self.0.write().unwrap().tools_enabled = enabled;
+    }
+
+    /// Replaces all request options used by future chat completion requests.
+    pub fn set_request_options(&mut self, options: OpenAiRequestOptions) {
+        self.0.write().unwrap().request_options = options;
+    }
+
+    /// Sets the `tool_choice` option for future chat completion requests.
+    pub fn set_tool_choice(&mut self, tool_choice: Option<OpenAiToolChoice>) {
+        self.0.write().unwrap().request_options.tool_choice = tool_choice;
+    }
+
+    /// Sets the `response_format` option for future chat completion requests.
+    pub fn set_response_format(&mut self, response_format: Option<OpenAiResponseFormat>) {
+        self.0.write().unwrap().request_options.response_format = response_format;
     }
 }
 
@@ -517,6 +659,7 @@ impl BotClient for OpenAiClient {
         let inner = self.0.read().unwrap().clone();
         let url = format!("{}/chat/completions", inner.url);
         let headers = inner.headers;
+        let request_options = inner.request_options;
 
         // Only process tools if they are enabled for this client
         let tools: Vec<FunctionTool> = if inner.tools_enabled {
@@ -541,18 +684,12 @@ impl BotClient for OpenAiClient {
                 }
             }
 
-            let mut json = serde_json::json!({
-                "model": bot_id.id(),
-                "messages": outgoing_messages,
-                // Note: o1 only supports 1.0, it will error if other value is used.
-                // "temperature": 0.7,
-                "stream": true
-            });
-
-            // Only include tools if there are any available
-            if !tools.is_empty() {
-                json["tools"] = serde_json::json!(tools);
-            }
+            let json = build_chat_completions_request_body(
+                bot_id.id(),
+                &outgoing_messages,
+                &tools,
+                &request_options,
+            );
 
 
             let request = inner
@@ -766,5 +903,83 @@ fn split_reasoning_tag(text: &str) -> (&str, &str) {
         text.split_once(END_TAG).unwrap_or((text, ""))
     } else {
         ("", text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_user_message() -> OutgoingMessage {
+        OutgoingMessage {
+            content: Content::Text("hello".to_string()),
+            role: Role::User,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    #[test]
+    fn request_body_omits_optional_fields_by_default() {
+        let body = build_chat_completions_request_body(
+            "gpt-test",
+            &[sample_user_message()],
+            &[],
+            &OpenAiRequestOptions::default(),
+        );
+
+        assert_eq!(body["model"], "gpt-test");
+        assert_eq!(body["stream"], true);
+        assert!(body.get("tools").is_none());
+        assert!(body.get("tool_choice").is_none());
+        assert!(body.get("response_format").is_none());
+    }
+
+    #[test]
+    fn request_body_includes_required_tool_choice() {
+        let options = OpenAiRequestOptions::default().with_tool_choice(OpenAiToolChoice::Required);
+        let body = build_chat_completions_request_body(
+            "gpt-test",
+            &[sample_user_message()],
+            &[],
+            &options,
+        );
+
+        assert_eq!(body["tool_choice"], "required");
+    }
+
+    #[test]
+    fn request_body_includes_json_schema_response_format() {
+        let options = OpenAiRequestOptions::default().with_response_format(
+            OpenAiResponseFormat::json_schema(
+                "tool_output".to_string(),
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "answer": { "type": "string" }
+                    },
+                    "required": ["answer"],
+                    "additionalProperties": false
+                }),
+                true,
+            ),
+        );
+        let body = build_chat_completions_request_body(
+            "gpt-test",
+            &[sample_user_message()],
+            &[],
+            &options,
+        );
+
+        assert_eq!(body["response_format"]["type"], "json_schema");
+        assert_eq!(
+            body["response_format"]["json_schema"]["name"],
+            "tool_output"
+        );
+        assert_eq!(
+            body["response_format"]["json_schema"]["schema"]["properties"]["answer"]["type"],
+            "string"
+        );
+        assert_eq!(body["response_format"]["json_schema"]["strict"], true);
     }
 }
