@@ -421,22 +421,41 @@ pub enum OpenAiToolChoice {
     Function { name: String },
 }
 
-impl OpenAiToolChoice {
-    fn as_json(&self) -> serde_json::Value {
+impl Serialize for OpenAiToolChoice {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
         match self {
-            OpenAiToolChoice::None => serde_json::Value::String("none".to_string()),
-            OpenAiToolChoice::Auto => serde_json::Value::String("auto".to_string()),
-            OpenAiToolChoice::Required => serde_json::Value::String("required".to_string()),
-            OpenAiToolChoice::Function { name } => serde_json::json!({
-                "type": "function",
-                "function": { "name": name }
-            }),
+            OpenAiToolChoice::None => {
+                serializer.serialize_str("none")
+            }
+            OpenAiToolChoice::Auto => {
+                serializer.serialize_str("auto")
+            }
+            OpenAiToolChoice::Required => {
+                serializer.serialize_str("required")
+            }
+            OpenAiToolChoice::Function { name } => {
+                use serde::ser::SerializeMap;
+                let mut map =
+                    serializer.serialize_map(Some(2))?;
+                map.serialize_entry(
+                    "type",
+                    "function",
+                )?;
+                map.serialize_entry(
+                    "function",
+                    &serde_json::json!({"name": name}),
+                )?;
+                map.end()
+            }
         }
     }
 }
 
 /// JSON schema definition used by [`OpenAiResponseFormat::JsonSchema`].
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct OpenAiJsonSchemaResponseFormat {
     /// Schema identifier expected by OpenAI-compatible APIs.
     pub name: String,
@@ -447,38 +466,33 @@ pub struct OpenAiJsonSchemaResponseFormat {
 }
 
 /// Controls structured output behavior for the Chat Completions API.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum OpenAiResponseFormat {
     /// Default text output.
     Text,
     /// JSON object output mode.
     JsonObject,
     /// Structured output using JSON Schema.
-    JsonSchema(OpenAiJsonSchemaResponseFormat),
+    JsonSchema {
+        /// The JSON schema configuration.
+        json_schema: OpenAiJsonSchemaResponseFormat,
+    },
 }
 
 impl OpenAiResponseFormat {
     /// Creates a JSON schema response format payload.
-    pub fn json_schema(name: String, schema: serde_json::Value, strict: bool) -> Self {
-        OpenAiResponseFormat::JsonSchema(OpenAiJsonSchemaResponseFormat {
-            name,
-            schema,
-            strict,
-        })
-    }
-
-    fn as_json(&self) -> serde_json::Value {
-        match self {
-            OpenAiResponseFormat::Text => serde_json::json!({ "type": "text" }),
-            OpenAiResponseFormat::JsonObject => serde_json::json!({ "type": "json_object" }),
-            OpenAiResponseFormat::JsonSchema(json_schema) => serde_json::json!({
-                "type": "json_schema",
-                "json_schema": {
-                    "name": json_schema.name,
-                    "schema": json_schema.schema,
-                    "strict": json_schema.strict,
-                }
-            }),
+    pub fn json_schema(
+        name: String,
+        schema: serde_json::Value,
+        strict: bool,
+    ) -> Self {
+        OpenAiResponseFormat::JsonSchema {
+            json_schema: OpenAiJsonSchemaResponseFormat {
+                name,
+                schema,
+                strict,
+            },
         }
     }
 }
@@ -490,40 +504,49 @@ pub struct OpenAiRequestOptions {
     pub tool_choice: Option<OpenAiToolChoice>,
     /// Optional `response_format` field sent to the API.
     pub response_format: Option<OpenAiResponseFormat>,
-    /// Optional `temperature` field sent to the API.
+    /// Sampling temperature (`0.0..=2.0`). Higher values produce more random output.
     pub temperature: Option<f32>,
-    /// Optional `top_p` field sent to the API.
+    /// Nucleus sampling threshold (`0.0..=1.0`).
     pub top_p: Option<f32>,
-    /// Optional `max_completion_tokens` field sent to the API.
+    /// Maximum number of tokens to generate in the completion.
     pub max_completion_tokens: Option<u32>,
-    /// Optional `stop` field sent to the API.
+    /// Stop sequences (up to 4). Generation stops when any sequence is encountered.
     pub stop: Option<OpenAiStop>,
     /// Optional `parallel_tool_calls` field sent to the API.
     pub parallel_tool_calls: Option<bool>,
     /// Optional `seed` field sent to the API.
     pub seed: Option<i64>,
-    /// Optional `presence_penalty` field sent to the API.
+    /// Penalizes tokens based on prior appearance in the text (`-2.0..=2.0`).
     pub presence_penalty: Option<f32>,
-    /// Optional `frequency_penalty` field sent to the API.
+    /// Penalizes tokens based on their frequency in the text (`-2.0..=2.0`).
     pub frequency_penalty: Option<f32>,
+    /// Whether to return log probabilities of output tokens.
+    pub logprobs: Option<bool>,
+    /// Number of most likely tokens to return at each position (`0..=20`).
+    /// Requires `logprobs` to be `true`.
+    pub top_logprobs: Option<u8>,
+    /// End-user identifier for OpenAI abuse monitoring.
+    pub user: Option<String>,
+    /// Stream-specific options such as `include_usage`.
+    pub stream_options: Option<OpenAiStreamOptions>,
 }
 
 /// Stop sequences used by the OpenAI Chat Completions API.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(untagged)]
 pub enum OpenAiStop {
     /// A single stop sequence.
     Single(String),
-    /// Multiple stop sequences.
+    /// Multiple stop sequences (up to 4).
     Multiple(Vec<String>),
 }
 
-impl OpenAiStop {
-    fn as_json(&self) -> serde_json::Value {
-        match self {
-            OpenAiStop::Single(sequence) => serde_json::Value::String(sequence.clone()),
-            OpenAiStop::Multiple(sequences) => serde_json::json!(sequences),
-        }
-    }
+/// Stream-specific options for the Chat Completions API.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct OpenAiStreamOptions {
+    /// Whether to include token usage data in stream responses.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_usage: Option<bool>,
 }
 
 impl OpenAiRequestOptions {
@@ -539,13 +562,13 @@ impl OpenAiRequestOptions {
         self
     }
 
-    /// Returns options with `temperature` configured.
+    /// Returns options with sampling temperature (`0.0..=2.0`) configured.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
         self
     }
 
-    /// Returns options with `top_p` configured.
+    /// Returns options with nucleus sampling threshold (`0.0..=1.0`) configured.
     pub fn with_top_p(mut self, top_p: f32) -> Self {
         self.top_p = Some(top_p);
         self
@@ -575,15 +598,45 @@ impl OpenAiRequestOptions {
         self
     }
 
-    /// Returns options with `presence_penalty` configured.
+    /// Returns options with presence penalty (`-2.0..=2.0`) configured.
     pub fn with_presence_penalty(mut self, presence_penalty: f32) -> Self {
         self.presence_penalty = Some(presence_penalty);
         self
     }
 
-    /// Returns options with `frequency_penalty` configured.
+    /// Returns options with frequency penalty (`-2.0..=2.0`) configured.
     pub fn with_frequency_penalty(mut self, frequency_penalty: f32) -> Self {
         self.frequency_penalty = Some(frequency_penalty);
+        self
+    }
+
+    /// Returns options with `logprobs` configured.
+    pub fn with_logprobs(mut self, logprobs: bool) -> Self {
+        self.logprobs = Some(logprobs);
+        self
+    }
+
+    /// Returns options with `top_logprobs` configured (`0..=20`).
+    pub fn with_top_logprobs(
+        mut self,
+        top_logprobs: u8,
+    ) -> Self {
+        self.top_logprobs = Some(top_logprobs);
+        self
+    }
+
+    /// Returns options with `user` configured.
+    pub fn with_user(mut self, user: String) -> Self {
+        self.user = Some(user);
+        self
+    }
+
+    /// Returns options with `stream_options` configured.
+    pub fn with_stream_options(
+        mut self,
+        stream_options: OpenAiStreamOptions,
+    ) -> Self {
+        self.stream_options = Some(stream_options);
         self
     }
 }
@@ -602,14 +655,29 @@ fn build_chat_completions_request_body(
 
     if !tools.is_empty() {
         json["tools"] = serde_json::json!(tools);
-    }
 
-    if let Some(tool_choice) = &options.tool_choice {
-        json["tool_choice"] = tool_choice.as_json();
+        if let Some(tool_choice) = &options.tool_choice {
+            json["tool_choice"] =
+                serde_json::to_value(tool_choice)
+                    .expect(
+                        "OpenAiToolChoice serialization \
+                        cannot fail",
+                    );
+        }
+
+        if let Some(parallel_tool_calls) = options.parallel_tool_calls {
+            json["parallel_tool_calls"] =
+                serde_json::json!(parallel_tool_calls);
+        }
     }
 
     if let Some(response_format) = &options.response_format {
-        json["response_format"] = response_format.as_json();
+        json["response_format"] =
+            serde_json::to_value(response_format)
+                .expect(
+                    "OpenAiResponseFormat serialization \
+                    cannot fail",
+                );
     }
 
     if let Some(temperature) = options.temperature {
@@ -625,11 +693,11 @@ fn build_chat_completions_request_body(
     }
 
     if let Some(stop) = &options.stop {
-        json["stop"] = stop.as_json();
-    }
-
-    if let Some(parallel_tool_calls) = options.parallel_tool_calls {
-        json["parallel_tool_calls"] = serde_json::json!(parallel_tool_calls);
+        json["stop"] =
+            serde_json::to_value(stop)
+                .expect(
+                    "OpenAiStop serialization cannot fail",
+                );
     }
 
     if let Some(seed) = options.seed {
@@ -642,6 +710,26 @@ fn build_chat_completions_request_body(
 
     if let Some(frequency_penalty) = options.frequency_penalty {
         json["frequency_penalty"] = serde_json::json!(frequency_penalty);
+    }
+
+    if let Some(logprobs) = options.logprobs {
+        json["logprobs"] = serde_json::json!(logprobs);
+    }
+
+    if let Some(top_logprobs) = options.top_logprobs {
+        json["top_logprobs"] =
+            serde_json::json!(top_logprobs);
+    }
+
+    if let Some(user) = &options.user {
+        json["user"] = serde_json::json!(user);
+    }
+
+    if let Some(stream_options) = &options.stream_options {
+        json["stream_options"] =
+            serde_json::to_value(stream_options).expect(
+                "OpenAiStreamOptions serialization cannot fail",
+            );
     }
 
     json
@@ -695,7 +783,7 @@ impl OpenAiClient {
 
         self.0
             .write()
-            .unwrap()
+            .expect("openai client lock poisoned")
             .headers
             .insert(header_name, header_value);
 
@@ -706,7 +794,12 @@ impl OpenAiClient {
         self.set_header("Authorization", &format!("Bearer {}", key))?;
 
         // Anthropic requires a different header for the API key, even with the OpenAI API compatibility layer.
-        if self.0.read().unwrap().url.contains("anthropic") {
+        let is_anthropic = self.0
+            .read()
+            .expect("openai client lock poisoned")
+            .url
+            .contains("anthropic");
+        if is_anthropic {
             self.set_header("x-api-key", key)?;
             // Also needed for every Anthropic request.
             // TODO: remove this once we support a native Anthropic client.
@@ -717,68 +810,160 @@ impl OpenAiClient {
     }
 
     pub fn set_tools_enabled(&mut self, enabled: bool) {
-        self.0.write().unwrap().tools_enabled = enabled;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .tools_enabled = enabled;
     }
 
     /// Replaces all request options used by future chat completion requests.
     pub fn set_request_options(&mut self, options: OpenAiRequestOptions) {
-        self.0.write().unwrap().request_options = options;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options = options;
     }
 
     /// Sets the `tool_choice` option for future chat completion requests.
     pub fn set_tool_choice(&mut self, tool_choice: Option<OpenAiToolChoice>) {
-        self.0.write().unwrap().request_options.tool_choice = tool_choice;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .tool_choice = tool_choice;
     }
 
     /// Sets the `response_format` option for future chat completion requests.
     pub fn set_response_format(&mut self, response_format: Option<OpenAiResponseFormat>) {
-        self.0.write().unwrap().request_options.response_format = response_format;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .response_format = response_format;
     }
 
-    /// Sets the `temperature` option for future chat completion requests.
+    /// Sets the sampling temperature (`0.0..=2.0`) for future requests.
     pub fn set_temperature(&mut self, temperature: Option<f32>) {
-        self.0.write().unwrap().request_options.temperature = temperature;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .temperature = temperature;
     }
 
-    /// Sets the `top_p` option for future chat completion requests.
+    /// Sets the nucleus sampling threshold (`0.0..=1.0`) for future requests.
     pub fn set_top_p(&mut self, top_p: Option<f32>) {
-        self.0.write().unwrap().request_options.top_p = top_p;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .top_p = top_p;
     }
 
-    /// Sets the `max_completion_tokens` option for future chat completion requests.
+    /// Sets the max completion tokens for future requests.
     pub fn set_max_completion_tokens(&mut self, max_completion_tokens: Option<u32>) {
-        self.0.write().unwrap().request_options.max_completion_tokens = max_completion_tokens;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .max_completion_tokens = max_completion_tokens;
     }
 
-    /// Sets the `stop` option for future chat completion requests.
+    /// Sets stop sequences (up to 4) for future requests.
     pub fn set_stop(&mut self, stop: Option<OpenAiStop>) {
-        self.0.write().unwrap().request_options.stop = stop;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .stop = stop;
     }
 
     /// Sets the `parallel_tool_calls` option for future chat completion requests.
     pub fn set_parallel_tool_calls(&mut self, parallel_tool_calls: Option<bool>) {
-        self.0.write().unwrap().request_options.parallel_tool_calls = parallel_tool_calls;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .parallel_tool_calls = parallel_tool_calls;
     }
 
     /// Sets the `seed` option for future chat completion requests.
     pub fn set_seed(&mut self, seed: Option<i64>) {
-        self.0.write().unwrap().request_options.seed = seed;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .seed = seed;
     }
 
-    /// Sets the `presence_penalty` option for future chat completion requests.
+    /// Sets the presence penalty (`-2.0..=2.0`) for future requests.
     pub fn set_presence_penalty(&mut self, presence_penalty: Option<f32>) {
-        self.0.write().unwrap().request_options.presence_penalty = presence_penalty;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .presence_penalty = presence_penalty;
     }
 
-    /// Sets the `frequency_penalty` option for future chat completion requests.
+    /// Sets the frequency penalty (`-2.0..=2.0`) for future requests.
     pub fn set_frequency_penalty(&mut self, frequency_penalty: Option<f32>) {
-        self.0.write().unwrap().request_options.frequency_penalty = frequency_penalty;
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .frequency_penalty = frequency_penalty;
+    }
+
+    /// Sets the `logprobs` option for future requests.
+    pub fn set_logprobs(&mut self, logprobs: Option<bool>) {
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .logprobs = logprobs;
+    }
+
+    /// Sets the `top_logprobs` option (`0..=20`) for future
+    /// requests. Requires `logprobs` to be `Some(true)`.
+    pub fn set_top_logprobs(
+        &mut self,
+        top_logprobs: Option<u8>,
+    ) {
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .top_logprobs = top_logprobs;
+    }
+
+    /// Sets the `user` option for future requests.
+    pub fn set_user(&mut self, user: Option<String>) {
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .user = user;
+    }
+
+    /// Sets `stream_options` for future requests.
+    pub fn set_stream_options(
+        &mut self,
+        stream_options: Option<OpenAiStreamOptions>,
+    ) {
+        self.0
+            .write()
+            .expect("openai client lock poisoned")
+            .request_options
+            .stream_options = stream_options;
     }
 }
 
 impl BotClient for OpenAiClient {
     fn bots(&mut self) -> BoxPlatformSendFuture<'static, ClientResult<Vec<Bot>>> {
-        let inner = self.0.read().unwrap().clone();
+        let inner = self.0
+            .read()
+            .expect("openai client lock poisoned")
+            .clone();
         let client = inner.client;
         let base_url = inner.url;
         let headers = inner.headers;
@@ -810,7 +995,10 @@ impl BotClient for OpenAiClient {
         let bot_id = bot_id.clone();
         let messages = messages.to_vec();
 
-        let inner = self.0.read().unwrap().clone();
+        let inner = self.0
+            .read()
+            .expect("openai client lock poisoned")
+            .clone();
         let url = format!("{}/chat/completions", inner.url);
         let headers = inner.headers;
         let request_options = inner.request_options;
@@ -844,7 +1032,6 @@ impl BotClient for OpenAiClient {
                 &tools,
                 &request_options,
             );
-
 
             let request = inner
                 .client
@@ -1064,6 +1251,18 @@ fn split_reasoning_tag(text: &str) -> (&str, &str) {
 mod tests {
     use super::*;
 
+    fn sample_function_tool() -> FunctionTool {
+        FunctionTool {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: "test_fn".to_string(),
+                description: "A test function".to_string(),
+                parameters: serde_json::json!({"type": "object"}),
+                strict: None,
+            },
+        }
+    }
+
     fn sample_user_message() -> OutgoingMessage {
         OutgoingMessage {
             content: Content::Text("hello".to_string()),
@@ -1095,11 +1294,31 @@ mod tests {
         assert!(body.get("seed").is_none());
         assert!(body.get("presence_penalty").is_none());
         assert!(body.get("frequency_penalty").is_none());
+        assert!(body.get("logprobs").is_none());
+        assert!(body.get("top_logprobs").is_none());
+        assert!(body.get("user").is_none());
+        assert!(body.get("stream_options").is_none());
     }
 
     #[test]
     fn request_body_includes_required_tool_choice() {
-        let options = OpenAiRequestOptions::default().with_tool_choice(OpenAiToolChoice::Required);
+        let options = OpenAiRequestOptions::default()
+            .with_tool_choice(OpenAiToolChoice::Required);
+        let body = build_chat_completions_request_body(
+            "gpt-test",
+            &[sample_user_message()],
+            &[sample_function_tool()],
+            &options,
+        );
+
+        assert_eq!(body["tool_choice"], "required");
+    }
+
+    #[test]
+    fn request_body_omits_tool_choice_when_tools_empty() {
+        let options = OpenAiRequestOptions::default()
+            .with_tool_choice(OpenAiToolChoice::Required)
+            .with_parallel_tool_calls(true);
         let body = build_chat_completions_request_body(
             "gpt-test",
             &[sample_user_message()],
@@ -1107,7 +1326,15 @@ mod tests {
             &options,
         );
 
-        assert_eq!(body["tool_choice"], "required");
+        assert!(
+            body.get("tool_choice").is_none(),
+            "tool_choice should not be sent when tools is empty"
+        );
+        assert!(
+            body.get("parallel_tool_calls").is_none(),
+            "parallel_tool_calls should not be sent \
+            when tools is empty"
+        );
     }
 
     #[test]
@@ -1199,9 +1426,8 @@ mod tests {
     }
 
     #[test]
-    fn request_body_includes_parallel_tool_calls_and_seed() {
+    fn request_body_includes_seed() {
         let options = OpenAiRequestOptions::default()
-            .with_parallel_tool_calls(true)
             .with_seed(12345);
         let body = build_chat_completions_request_body(
             "gpt-test",
@@ -1210,8 +1436,21 @@ mod tests {
             &options,
         );
 
-        assert_eq!(body["parallel_tool_calls"], true);
         assert_eq!(body["seed"], 12345);
+    }
+
+    #[test]
+    fn request_body_includes_parallel_tool_calls() {
+        let options = OpenAiRequestOptions::default()
+            .with_parallel_tool_calls(true);
+        let body = build_chat_completions_request_body(
+            "gpt-test",
+            &[sample_user_message()],
+            &[sample_function_tool()],
+            &options,
+        );
+
+        assert_eq!(body["parallel_tool_calls"], true);
     }
 
     #[test]
@@ -1234,5 +1473,54 @@ mod tests {
             .expect("frequency_penalty should be encoded as a number");
         assert!((presence_penalty - 0.3).abs() < 1e-6);
         assert!((frequency_penalty - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn request_body_includes_logprobs_fields() {
+        let options = OpenAiRequestOptions::default()
+            .with_logprobs(true)
+            .with_top_logprobs(5);
+        let body = build_chat_completions_request_body(
+            "gpt-test",
+            &[sample_user_message()],
+            &[],
+            &options,
+        );
+
+        assert_eq!(body["logprobs"], true);
+        assert_eq!(body["top_logprobs"], 5);
+    }
+
+    #[test]
+    fn request_body_includes_user_field() {
+        let options = OpenAiRequestOptions::default()
+            .with_user("user-123".to_string());
+        let body = build_chat_completions_request_body(
+            "gpt-test",
+            &[sample_user_message()],
+            &[],
+            &options,
+        );
+
+        assert_eq!(body["user"], "user-123");
+    }
+
+    #[test]
+    fn request_body_includes_stream_options() {
+        let options = OpenAiRequestOptions::default()
+            .with_stream_options(OpenAiStreamOptions {
+                include_usage: Some(true),
+            });
+        let body = build_chat_completions_request_body(
+            "gpt-test",
+            &[sample_user_message()],
+            &[],
+            &options,
+        );
+
+        assert_eq!(
+            body["stream_options"]["include_usage"],
+            true
+        );
     }
 }

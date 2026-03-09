@@ -27,6 +27,7 @@ async fn run_structured_output_test(url: &str, key: &str, model: &str) {
     client.set_presence_penalty(Some(0.2));
     client.set_frequency_penalty(Some(0.2));
     client.set_stop(Some(OpenAiStop::Single("<END>".to_string())));
+    client.set_user(Some("example-user".to_string()));
     client.set_response_format(Some(OpenAiResponseFormat::json_schema(
         "answer_payload".to_string(),
         serde_json::json!({
