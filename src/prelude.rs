@@ -5,9 +5,9 @@ pub use crate::protocol::*;
 
 // These are the clients that are most commonly used.
 #[cfg(feature = "api-clients")]
-pub use crate::clients::openai::OpenAiClient;
-#[cfg(feature = "api-clients")]
 pub use crate::clients::gemini::GeminiClient;
+#[cfg(feature = "api-clients")]
+pub use crate::clients::openai::OpenAiClient;
 pub use crate::clients::router::RouterClient;
 
 // These other clients are less commonly used.

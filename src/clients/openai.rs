@@ -8,9 +8,9 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use crate::protocol::*;
 use crate::utils::asynchronous::{BoxPlatformSendFuture, BoxPlatformSendStream};
 use crate::utils::{serde::deserialize_null_default, sse::parse_sse};
-use crate::protocol::*;
 
 /// The content of a [`ContentPart::ImageUrl`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
