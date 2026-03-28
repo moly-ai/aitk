@@ -7,6 +7,9 @@ pub mod openai_image;
 #[cfg(feature = "api-clients")]
 pub mod openai_stt;
 
+#[cfg(feature = "api-clients")]
+pub mod gemini;
+
 #[cfg(feature = "realtime-clients")]
 pub mod openai_realtime;
 
